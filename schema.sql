@@ -14,13 +14,16 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     birth_year INTEGER CHECK (birth_year BETWEEN 1900 AND 2024),
     gender TEXT CHECK (gender IN ('male', 'female', 'other')),
     sex_orientation_id INTEGER,
+    music_genre_id INTEGER,
+    mbti TEXT, -- 新增 mbti 欄位
     -- location TEXT, --之後可以做這個 跟那個最大距離有關
     bio TEXT,      -- 自我介紹
     height INTEGER CHECK (height > 0), -- 身高（公分）
     -- occupation TEXT, --之後可以做這個
     -- education TEXT,
     FOREIGN KEY (user_id) REFERENCES users(id),
-    FOREIGN KEY (sex_orientation_id) REFERENCES sex_orientations(id)
+    FOREIGN KEY (sex_orientation_id) REFERENCES sex_orientations(id),
+    FOREIGN KEY (music_genre_id) REFERENCES music_genre(id)
 );
 
 CREATE TABLE IF NOT EXISTS interests (
@@ -93,7 +96,12 @@ CREATE TABLE IF NOT EXISTS sex_orientations (
     description TEXT           -- 性向描述（可選）
 );
 
-INSERT INTO sex_orientations (name, description) VALUES
+CREATE TABLE IF NOT EXISTS music_genre (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL
+);
+
+INSERT OR IGNORE INTO sex_orientations (name, description) VALUES
     ('異性戀', '對異性有興趣'),
     ('同性戀', '對同性有興趣'),
     ('雙性戀', '對兩種性別都有興趣'),
@@ -110,7 +118,6 @@ CREATE INDEX IF NOT EXISTS idx_match_requests_from_user ON match_requests(from_u
 CREATE INDEX IF NOT EXISTS idx_match_requests_to_user ON match_requests(to_user_id);
 CREATE INDEX IF NOT EXISTS idx_messages_chat_room_id ON messages(chat_room_id);
 CREATE INDEX IF NOT EXISTS idx_messages_sender_id ON messages(sender_id);
-CREATE INDEX IF NOT EXISTS idx_threads_users ON threads(user_a_id, user_b_id);
 
 -- 需要確保所有外鍵都有對應的索引
 -- 建議為以下外鍵添加索引：
@@ -120,5 +127,5 @@ CREATE INDEX IF NOT EXISTS idx_chat_rooms_user_a_id ON chat_rooms(user_a_id);
 CREATE INDEX IF NOT EXISTS idx_chat_rooms_user_b_id ON chat_rooms(user_b_id);
 
 -- 建議為以下組合添加唯一性約束
-ALTER TABLE chat_rooms ADD UNIQUE (user_a_id, user_b_id);  -- 避免重複的聊天室
-ALTER TABLE match_requests ADD UNIQUE (from_user_id, to_user_id);  -- 避免重複的配對請求
+CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_rooms_unique ON chat_rooms(user_a_id, user_b_id);  -- 避免重複的聊天室
+CREATE UNIQUE INDEX IF NOT EXISTS idx_match_requests_unique ON match_requests(from_user_id, to_user_id);  -- 避免重複的配對請求

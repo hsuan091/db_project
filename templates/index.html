@@ -6,6 +6,15 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
+{% with messages = get_flashed_messages() %}
+  {% if messages %}
+    <ul class="flashes">
+      {% for message in messages %}
+        <li>{{ message }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+{% endwith %}
     <h1>歡迎來到我們的交友平台 💖</h1>
 
     <p>這是一個為女生打造的安全舒適交友空間。</p>

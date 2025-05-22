@@ -1,7 +1,6 @@
 from flask import Flask, request, render_template, redirect, session, flash, jsonify
 import sqlite3
 from werkzeug.security import generate_password_hash, check_password_hash
-from google.cloud import storage
 from werkzeug.utils import secure_filename
 import random
 import time
@@ -11,15 +10,10 @@ import os
 app = Flask(__name__)
 app.secret_key = "your-secret-key"
 
-# Initialize Google Cloud Storage
-storage_client = storage.Client()
-bucket_name = "your-bucket-name"
-bucket = storage_client.bucket(bucket_name)
-
 # Initialize SQLite
 def get_db():
-    conn = sqlite3.connect("models.db")
-    conn.row_factory = sqlite3.Row
+    conn = sqlite3.connect("models.db") 
+    conn.row_factory = sqlite3.Row #會返回一個類似字典的物件
     return conn
 
 # 允許的檔案類型
@@ -47,14 +41,22 @@ def signup():
 
     conn = get_db()
     try:
-        conn.execute("INSERT INTO users (name, email, password) VALUES (?, ?, ?)", (name, email, password))
+        conn.execute("INSERT INTO users (name, email, password) VALUES (?, ?, ?)", 
+                    (name, email, password))
         conn.commit()
         flash("註冊成功！請登入")
         return redirect("/login")
-    except sqlite3.IntegrityError:
-        flash("Email 已被註冊")
+    except sqlite3.IntegrityError as e:
+        # 檢查錯誤訊息來區分不同的情況
+        error_msg = str(e)
+        if "UNIQUE constraint failed" in error_msg:
+            flash("Email 已被註冊")
+        elif "CHECK constraint failed" in error_msg:
+            flash("Email 格式不正確")
+        else:
+            flash("註冊失敗，請檢查輸入資料")
         return redirect("/register")
-    finally:
+    finally: #不管有沒有成功 都要關閉連線
         conn.close()
 
 # Login page
@@ -69,13 +71,13 @@ def login():
     password = request.form["password"]
 
     conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
-    user = cursor.fetchone()
+    cursor = conn.cursor()  # 創建一個新的游標
+    cursor.execute("SELECT * FROM users WHERE email = ?", (email,))  # 執行查詢
+    user = cursor.fetchone()  # 獲取一行資料
     conn.close()
 
     if user and check_password_hash(user["password"], password):
-        session["user"] = user["name"]
+        session["user"] = user["name"] #將用戶名稱存入session 就是一個用來記住「誰在使用這個網站」的機制
         session["user_id"] = user["id"]
         flash("登入成功，歡迎 " + user["name"])
         return redirect("/match")
@@ -86,7 +88,7 @@ def login():
 # Match page
 @app.route("/match")
 def match():
-    if "user" not in session:
+    if "user" not in session: #如果沒有登入 就會被導到登入頁面
         return redirect("/login")
 
     user_id = session["user_id"]
@@ -101,7 +103,7 @@ def match():
             LEFT JOIN interests i ON ui.interest_id = i.id
             WHERE up.user_id = ?
             GROUP BY up.user_id
-        """, (user_id,))
+        """, (user_id,)) #將所有興趣名稱合併成一個字串
         user_profile = cursor.fetchone()
 
         profile_complete = (
@@ -147,58 +149,6 @@ def info():
         return redirect("/login")
     return render_template("info.html")
 
-# Save music interests to Firestore
-@app.route("/save_interests", methods=["POST"])
-def save_interests():
-    if "user_id" not in session:
-        return jsonify({"error": "未登入"}), 401
-    
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "缺少資料"}), 400
-
-    conn = get_db()
-    try:
-        # 更新用戶資料
-        conn.execute("""
-            INSERT OR REPLACE INTO user_profiles 
-            (user_id, birth_date, birth_month, birth_year, gender, sex_orientation_id, bio, height) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            session["user_id"],
-            data.get("birth_date"),
-            data.get("birth_month"),
-            data.get("birth_year"),
-            data.get("gender"),
-            data.get("sex_orientation_id"),
-            data.get("bio"),
-            data.get("height")
-        ))
-        
-        # 處理興趣
-        if data.get("interests"):
-            # 先清除舊的興趣
-            conn.execute("DELETE FROM user_interests WHERE user_id = ?", (session["user_id"],))
-            
-            # 新增新的興趣
-            for interest in data.get("interests"):
-                # 確保興趣存在
-                conn.execute("INSERT OR IGNORE INTO interests (name) VALUES (?)", (interest,))
-                # 獲取興趣ID
-                cursor = conn.execute("SELECT id FROM interests WHERE name = ?", (interest,))
-                interest_id = cursor.fetchone()[0]
-                # 建立關聯
-                conn.execute("INSERT INTO user_interests (user_id, interest_id) VALUES (?, ?)",
-                           (session["user_id"], interest_id))
-        
-        conn.commit()
-        return jsonify({"status": "success"}), 200
-    except Exception as e:
-        conn.rollback()
-        return jsonify({"error": str(e)}), 500
-    finally:
-        conn.close()
-
 # Logout
 @app.route("/logout")
 def logout():
@@ -223,22 +173,28 @@ def upload_photo():
         filename = secure_filename(file.filename)
         unique_filename = f"{session['user_id']}_{int(time.time())}_{filename}"
         
-        # 上傳到 Google Cloud Storage
-        blob = bucket.blob(f"user_photos/{unique_filename}")
-        blob.upload_from_file(file)
-        blob.make_public()
+        # 確保上傳目錄存在
+        upload_folder = os.path.join('static', 'uploads')
+        if not os.path.exists(upload_folder):
+            os.makedirs(upload_folder)
+            
+        # 儲存檔案
+        file_path = os.path.join(upload_folder, unique_filename)
+        file.save(file_path)
         
+        # 儲存到資料庫
+        photo_url = f"/static/uploads/{unique_filename}"
         conn = get_db()
         try:
             conn.execute("""
                 INSERT INTO photos (user_id, photo_url, is_profile_photo)
                 VALUES (?, ?, ?)
-            """, (session["user_id"], blob.public_url, request.form.get("is_profile_photo", 0)))
+            """, (session["user_id"], photo_url, request.form.get("is_profile_photo", 0)))
             conn.commit()
             
             return jsonify({
                 "status": "success",
-                "photo_url": blob.public_url
+                "photo_url": photo_url
             }), 200
         except Exception as e:
             conn.rollback()
@@ -291,10 +247,11 @@ def delete_photo():
         """, (session["user_id"], photo_url))
         conn.commit()
 
-        # 從 Google Cloud Storage 刪除檔案
-        blob_name = photo_url.split("/")[-1]
-        blob = bucket.blob(f"user_photos/{blob_name}")
-        blob.delete()
+        # 從本地檔案系統刪除檔案
+        if photo_url.startswith('/static/uploads/'):
+            file_path = os.path.join('static', 'uploads', os.path.basename(photo_url))
+            if os.path.exists(file_path):
+                os.remove(file_path)
 
         return jsonify({"status": "success"}), 200
     except Exception as e:
@@ -517,6 +474,56 @@ def send_message():
             VALUES (?, ?, ?)
         """, (chat_room_id, session["user_id"], content))
         
+        conn.commit()
+        return jsonify({"status": "success"}), 200
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
+
+@app.route("/save_profile", methods=["POST"])
+def save_profile():
+    if "user_id" not in session:
+        return jsonify({"error": "未登入"}), 401
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "缺少資料"}), 400
+
+    conn = get_db()
+    try:
+        # 更新 user_profiles
+        conn.execute("""
+            INSERT OR REPLACE INTO user_profiles 
+            (user_id, birth_date, birth_month, birth_year, gender, sex_orientation_id, bio, height, music_genre_id, mbti)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            session["user_id"],
+            data.get("birth_date"),
+            data.get("birth_month"),
+            data.get("birth_year"),
+            data.get("gender"),
+            data.get("sex_orientation_id"),
+            data.get("bio"),
+            data.get("height"),
+            data.get("music_genre_id"),
+            data.get("mbti")
+        ))
+
+        # 處理興趣
+        if data.get("interests"):
+            conn.execute("DELETE FROM user_interests WHERE user_id = ?", (session["user_id"],))
+            for interest in data.get("interests"):
+                conn.execute("INSERT OR IGNORE INTO interests (name) VALUES (?)", (interest,))
+                cursor = conn.execute("SELECT id FROM interests WHERE name = ?", (interest,))
+                interest_id = cursor.fetchone()[0]
+                conn.execute("INSERT INTO user_interests (user_id, interest_id) VALUES (?, ?)", (session["user_id"], interest_id))
+
+        # 更新姓名（users 表）
+        if data.get("name"):
+            conn.execute("UPDATE users SET name = ? WHERE id = ?", (data.get("name"), session["user_id"]))
+
         conn.commit()
         return jsonify({"status": "success"}), 200
     except Exception as e:

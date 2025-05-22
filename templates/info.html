@@ -7,6 +7,17 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
+    <div id="flask-flash-messages">
+        {% with messages = get_flashed_messages() %}
+          {% if messages %}
+            <ul class="flashes">
+              {% for message in messages %}
+                <li>{{ message }}</li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+        {% endwith %}
+    </div>
     <div id="root"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
@@ -14,44 +25,77 @@
     <script src="https://cdn.jsdelivr.net/npm/axios@1.6.7/dist/axios.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.23.9/babel.min.js"></script>
 
+    {% raw %}
     <script type="text/babel">
         const { useState } = React;
 
         function ProfileForm() {
             const [name, setName] = useState("");
-            const [age, setAge] = useState("");
+            const [birthYear, setBirthYear] = useState("");
+            const [birthMonth, setBirthMonth] = useState("");
+            const [birthDate, setBirthDate] = useState("");
+            const [gender, setGender] = useState("");
+            const [sexOrientationId, setSexOrientationId] = useState("");
+            const [height, setHeight] = useState("");
+            const [bio, setBio] = useState("");
             const [interests, setInterests] = useState("");
-            const [favoriteArtist, setFavoriteArtist] = useState("");
-            const [musicGenre, setMusicGenre] = useState("");
+            const [musicGenreId, setMusicGenreId] = useState("");
+            const [mbti, setMbti] = useState("");
             const [error, setError] = useState("");
 
-            // Handle form submission
+            // TODO: 這裡 musicGenres 和 sexOrientations 應由後端渲染或 API 取得
+            const musicGenres = [
+                { id: 1, name: "西洋" },
+                { id: 2, name: "聽團" },
+                { id: 3, name: "K-pop" },
+                { id: 4, name: "流行" },
+                { id: 5, name: "古典" },
+                { id: 6, name: "爵士" },
+                { id: 7, name: "嘻哈" },
+                { id: 8, name: "電子" },
+                { id: 9, name: "鄉村" },
+                { id: 10, name: "R&B" },
+            ];
+            const sexOrientations = [
+                { id: 1, name: "異性戀" },
+                { id: 2, name: "同性戀" },
+                { id: 3, name: "雙性戀" },
+                { id: 4, name: "泛性戀" },
+                { id: 5, name: "無性戀" },
+                { id: 6, name: "其他" },
+            ];
+
             const handleSubmit = async (e) => {
                 e.preventDefault();
                 setError("");
 
-                if (!name || !age) {
-                    setError("請填寫姓名和年齡");
+                if (!name || !birthYear || !birthMonth || !birthDate || !gender || !sexOrientationId || !height || !musicGenreId) {
+                    setError("請填寫所有必填欄位");
                     return;
                 }
-
-                if (isNaN(age) || age <= 0) {
-                    setError("請輸入有效的年齡");
+                if (isNaN(height) || height <= 0) {
+                    setError("請輸入有效的身高");
                     return;
                 }
 
                 try {
-                    const res = await fetch("/save_interests", {
+                    const res = await fetch("/save_profile", {
                         method: "POST",
                         headers: {
                             "Content-Type": "application/json",
                         },
                         body: JSON.stringify({
                             name,
-                            age: parseInt(age),
+                            birth_year: parseInt(birthYear),
+                            birth_month: parseInt(birthMonth),
+                            birth_date: parseInt(birthDate),
+                            gender,
+                            sex_orientation_id: parseInt(sexOrientationId),
+                            height: parseInt(height),
+                            bio,
                             interests: interests ? interests.split(",").map((s) => s.trim()) : [],
-                            favorite_artist: favoriteArtist,
-                            music_genre: musicGenre,
+                            music_genre_id: parseInt(musicGenreId),
+                            mbti,
                         }),
                     });
 
@@ -81,12 +125,72 @@
                             />
                         </div>
                         <div>
-                            <label>年齡：</label>
+                            <label>生日：</label>
                             <input
                                 type="number"
-                                value={age}
-                                onChange={(e) => setAge(e.target.value)}
+                                placeholder="年"
+                                value={birthYear}
+                                onChange={(e) => setBirthYear(e.target.value)}
+                                min="1900"
+                                max="2024"
                                 required
+                                style={{ width: "80px" }}
+                            /> 年
+                            <input
+                                type="number"
+                                placeholder="月"
+                                value={birthMonth}
+                                onChange={(e) => setBirthMonth(e.target.value)}
+                                min="1"
+                                max="12"
+                                required
+                                style={{ width: "60px" }}
+                            /> 月
+                            <input
+                                type="number"
+                                placeholder="日"
+                                value={birthDate}
+                                onChange={(e) => setBirthDate(e.target.value)}
+                                min="1"
+                                max="31"
+                                required
+                                style={{ width: "60px" }}
+                            /> 日
+                        </div>
+                        <div>
+                            <label>性別：</label>
+                            <select value={gender} onChange={(e) => setGender(e.target.value)} required>
+                                <option value="">請選擇</option>
+                                <option value="male">男性</option>
+                                <option value="female">女性</option>
+                                <option value="other">其他</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>性向：</label>
+                            <select value={sexOrientationId} onChange={(e) => setSexOrientationId(e.target.value)} required>
+                                <option value="">請選擇</option>
+                                {sexOrientations.map((s) => (
+                                    <option key={s.id} value={s.id}>{s.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <label>身高（公分）：</label>
+                            <input
+                                type="number"
+                                value={height}
+                                onChange={(e) => setHeight(e.target.value)}
+                                min="1"
+                                required
+                            />
+                        </div>
+                        <div>
+                            <label>自我介紹：</label>
+                            <textarea
+                                value={bio}
+                                onChange={(e) => setBio(e.target.value)}
+                                rows="3"
                             />
                         </div>
                         <div>
@@ -98,33 +202,26 @@
                             />
                         </div>
                         <div>
-                            <label>喜歡的歌手：</label>
-                            <input
-                                type="text"
-                                value={favoriteArtist}
-                                onChange={(e) => setFavoriteArtist(e.target.value)}
-                                placeholder="輸入歌手名稱..."
-                            />
-                        </div>
-                        <div>
                             <label>喜歡的音樂類型：</label>
                             <select
-                                value={musicGenre}
-                                onChange={(e) => setMusicGenre(e.target.value)}
+                                value={musicGenreId}
+                                onChange={(e) => setMusicGenreId(e.target.value)}
                                 required
                             >
                                 <option value="">請選擇音樂類型</option>
-                                <option value="西洋">西洋</option>
-                                <option value="聽團">聽團</option>
-                                <option value="K-pop">K-pop</option>
-                                <option value="流行">流行</option>
-                                <option value="古典">古典</option>
-                                <option value="爵士">爵士</option>
-                                <option value="嘻哈">嘻哈</option>
-                                <option value="電子">電子</option>
-                                <option value="鄉村">鄉村</option>
-                                <option value="R&B">R&B</option>
+                                {musicGenres.map((g) => (
+                                    <option key={g.id} value={g.id}>{g.name}</option>
+                                ))}
                             </select>
+                        </div>
+                        <div>
+                            <label>MBTI：</label>
+                            <input
+                                type="text"
+                                value={mbti}
+                                onChange={(e) => setMbti(e.target.value)}
+                                placeholder="例如：INTJ、ENFP..."
+                            />
                         </div>
                         <button type="submit">儲存</button>
                     </form>
@@ -135,5 +232,6 @@
         const root = ReactDOM.createRoot(document.getElementById("root"));
         root.render(<ProfileForm />);
     </script>
+    {% endraw %}
 </body>
 </html>
