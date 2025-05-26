@@ -32,6 +32,11 @@ def index():
 def show_register():
     return render_template("register.html")
 
+#@app.route("/info", methods=["GET", "POST"])
+#def info():
+#    return render_template("info.html")
+
+
 # Register action
 @app.route("/signup", methods=["POST"])
 def signup():
@@ -79,12 +84,120 @@ def login():
     if user and check_password_hash(user["password"], password):
         session["user"] = user["name"] #將用戶名稱存入session 就是一個用來記住「誰在使用這個網站」的機制
         session["user_id"] = user["id"]
-        flash("登入成功，歡迎 " + user["name"])
-        return redirect("/match")
+
+        # 在這裡判斷是否已有個資
+        conn = get_db()
+        cursor = conn.execute("SELECT * FROM user_profiles WHERE user_id = ?", (user["id"],))
+        user_profile = cursor.fetchone()
+        conn.close()
+
+        if not user_profile:
+            return redirect("/info")
+        else:
+            return redirect("/match")
+
+        #flash("登入成功，歡迎 " + user["name"])
+        #return redirect("/match")
     else:
         flash("登入失敗，請檢查帳密")
-        return redirect("/login")
+        #return redirect("/login")
+    return render_template("login.html")
+    
 
+@app.route("/match")
+def match():
+    if "user" not in session:
+        return redirect("/login")
+    
+    
+
+    user_id = session["user_id"]
+    conn = get_db()
+
+    try:
+        # 取得當前用戶資料（包含 MBTI）
+        cursor = conn.execute("""
+            SELECT up.*, GROUP_CONCAT(i.name) as interests
+            FROM user_profiles up
+            LEFT JOIN user_interests ui ON up.user_id = ui.user_id
+            LEFT JOIN interests i ON ui.interest_id = i.id
+            WHERE up.user_id = ?
+            GROUP BY up.user_id
+        """, (user_id,))
+        user_profile = cursor.fetchone()
+
+        if not user_profile:
+            flash("請先完成個人資料設定，才能進行配對。")
+            return redirect("/profile")  # 導去你個資設定的頁面，請確認這個路徑正確
+    
+        profile_complete = (
+            user_profile and
+            user_profile["birth_date"] and
+            user_profile["birth_month"] and
+            user_profile["birth_year"] and
+            user_profile["gender"] and
+            user_profile["sex_orientation_id"] and
+            user_profile["bio"] and
+            user_profile["height"] and
+            user_profile["interests"] and
+            user_profile["mbti"]  # 確保 MBTI 也已填寫
+        )
+
+        user_mbti = user_profile["mbti"].upper()
+
+        # 固定 MBTI 配對表
+        mbti_match_map = {
+            "ENFP": ["INFJ", "INTJ"],
+            "INFJ": ["ENFP", "ENTP"],
+            "INFP": ["ENFJ", "ENTJ"],
+            "ENFJ": ["INFP", "ISFP"],
+            "ENTP": ["INFJ", "INTP"],
+            "INTP": ["ENTP", "ENTJ"],
+            "INTJ": ["ENFP", "ENFJ"],
+            "ENTJ": ["INFP", "INTP"],
+            "ISFP": ["ESFJ", "ENFJ"],
+            "ESFJ": ["ISFP", "ISTP"],
+            "ESTJ": ["ISTP", "ISFJ"],
+            "ISTP": ["ESFJ", "ESTJ"],
+            "ISFJ": ["ESFP", "ESTP"],
+            "ESFP": ["ISFJ", "ISTJ"],
+            "ESTP": ["ISFJ", "ISFP"],
+            "ISTJ": ["ESFP", "ENFP"]
+        }
+
+        match_mbti_list = mbti_match_map.get(user_mbti, [])
+
+        if not match_mbti_list:
+            recommendations = []  # 若找不到對應 MBTI，則無推薦
+        else:
+            placeholders = ",".join("?" * len(match_mbti_list))
+            query = f"""
+                SELECT u.id, u.name, up.*, GROUP_CONCAT(i.name) as interests,
+                       (SELECT photo_url FROM photos WHERE user_id = u.id AND is_profile_photo = 1 LIMIT 1) as profile_photo
+                FROM users u
+                JOIN user_profiles up ON u.id = up.user_id
+                LEFT JOIN user_interests ui ON up.user_id = ui.user_id
+                LEFT JOIN interests i ON ui.interest_id = i.id
+                WHERE u.id != ? 
+                  AND u.id NOT IN (
+                    SELECT to_user_id FROM match_requests WHERE from_user_id = ?
+                    UNION
+                    SELECT from_user_id FROM match_requests WHERE to_user_id = ?
+                  )
+                  AND up.mbti IN ({placeholders})
+                GROUP BY u.id
+            """
+            cursor = conn.execute(query, (user_id, user_id, user_id, *match_mbti_list))
+            recommendations = cursor.fetchall()
+
+        return render_template("match.html",
+                               user_profile=user_profile,
+                               recommendations=recommendations)
+
+    finally:
+        conn.close()
+
+'''
 # Match page
 @app.route("/match")
 def match():
@@ -115,7 +228,8 @@ def match():
             user_profile["sex_orientation_id"] and
             user_profile["bio"] and
             user_profile["height"] and
-            user_profile["interests"]
+            user_profile["interests"] and 
+            user_profile["mbti"]  
         )
 
         # 獲取推薦用戶
@@ -141,6 +255,7 @@ def match():
                              recommendations=recommendations)
     finally:
         conn.close()
+'''
 
 # Information page
 @app.route("/info")
@@ -531,6 +646,7 @@ def save_profile():
         return jsonify({"error": str(e)}), 500
     finally:
         conn.close()
+
 
 if __name__ == "__main__":
     app.run(debug=True)
