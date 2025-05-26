@@ -88,7 +88,7 @@ def login():
 # Match page
 @app.route("/match")
 def match():
-    if "user" not in session: #如果沒有登入 就會被導到登入頁面
+    if "user" not in session:
         return redirect("/login")
 
     user_id = session["user_id"]
@@ -97,57 +97,95 @@ def match():
     try:
         # 獲取當前用戶資料
         cursor = conn.execute("""
-            SELECT up.*, GROUP_CONCAT(i.name) as interests
-            FROM user_profiles up
+            SELECT u.name, up.*, GROUP_CONCAT(i.name) as interests
+            FROM users u
+            LEFT JOIN user_profiles up ON u.id = up.user_id
             LEFT JOIN user_interests ui ON up.user_id = ui.user_id
             LEFT JOIN interests i ON ui.interest_id = i.id
-            WHERE up.user_id = ?
-            GROUP BY up.user_id
-        """, (user_id,)) #將所有興趣名稱合併成一個字串
-        user_profile = cursor.fetchone()
+            WHERE u.id = ?
+            GROUP BY u.id
+        """, (user_id,))
+        user_data = cursor.fetchone()
 
+        if not user_data:
+            flash("找不到用戶資料")
+            return redirect("/login")
+
+        # 檢查個人資料是否完整
         profile_complete = (
-            user_profile and
-            user_profile["birth_date"] and
-            user_profile["birth_month"] and
-            user_profile["birth_year"] and
-            user_profile["gender"] and
-            user_profile["sex_orientation_id"] and
-            user_profile["bio"] and
-            user_profile["height"] and
-            user_profile["interests"]
+            user_data["birth_date"] and 
+            user_data["birth_month"] and
+            user_data["birth_year"] and
+            user_data["gender"] and
+            user_data["sex_orientation_id"] and
+            user_data["height"] and
+            user_data["music_genre_id"]
         )
 
-        # 獲取推薦用戶
+        if not profile_complete:
+            flash("請先完成個人資料設定")
+            return redirect("/info")
+
+        # 獲取推薦用戶（排除已配對和已發送請求的用戶）
         cursor = conn.execute("""
             SELECT u.id, u.name, up.*, GROUP_CONCAT(i.name) as interests,
-                   (SELECT photo_url FROM photos WHERE user_id = u.id AND is_profile_photo = 1 LIMIT 1) as profile_photo
+                   (SELECT photo_url FROM photos WHERE user_id = u.id AND is_profile_photo = 1 LIMIT 1) as profile_photo,
+                   so.name as sex_orientation_name,
+                   mg.name as music_genre_name
             FROM users u
             JOIN user_profiles up ON u.id = up.user_id
             LEFT JOIN user_interests ui ON up.user_id = ui.user_id
             LEFT JOIN interests i ON ui.interest_id = i.id
+            LEFT JOIN sex_orientations so ON up.sex_orientation_id = so.id
+            LEFT JOIN music_genre mg ON up.music_genre_id = mg.id
             WHERE u.id != ? AND u.id NOT IN (
                 SELECT to_user_id FROM match_requests WHERE from_user_id = ?
                 UNION
                 SELECT from_user_id FROM match_requests WHERE to_user_id = ?
             )
             GROUP BY u.id
+            ORDER BY RANDOM()
+            LIMIT 10
         """, (user_id, user_id, user_id))
         
         recommendations = cursor.fetchall()
         
         return render_template("match.html", 
-                             user_profile=user_profile,
+                             user_profile=user_data,
                              recommendations=recommendations)
+                             
+    except Exception as e:
+        print(f"match 路由發生錯誤: {str(e)}")
+        flash("載入配對頁面時發生錯誤")
+        return redirect("/info")
     finally:
         conn.close()
-
 # Information page
 @app.route("/info")
 def info():
     if "user" not in session:
         return redirect("/login")
-    return render_template("info.html")
+    
+    # 獲取預設選項數據傳給模板
+    conn = get_db()
+    try:
+        # 獲取性向選項
+        cursor = conn.execute("SELECT id, name FROM sex_orientations ORDER BY id")
+        sex_orientations = cursor.fetchall()
+        
+        # 獲取音樂類型選項
+        cursor = conn.execute("SELECT id, name FROM music_genre ORDER BY id")
+        music_genres = cursor.fetchall()
+        
+        return render_template("info.html", 
+                             sex_orientations=sex_orientations,
+                             music_genres=music_genres)
+    except Exception as e:
+        print(f"載入個人資料頁面時發生錯誤: {str(e)}")
+        flash("載入頁面時發生錯誤")
+        return redirect("/match")
+    finally:
+        conn.close()
 
 # Logout
 @app.route("/logout")
@@ -203,6 +241,138 @@ def upload_photo():
             conn.close()
 
     return jsonify({"error": "不支援的檔案類型"}), 400
+@app.route("/init_sample_users", methods=["POST"])
+def init_sample_users():
+    """初始化範例用戶資料（僅供開發測試使用）"""
+    if "user_id" not in session:
+        return jsonify({"error": "未登入"}), 401
+    
+    conn = get_db()
+    try:
+        # 範例用戶資料
+        sample_users = [
+            {
+                "name": "小美",
+                "email": "mei@example.com",
+                "age": 25,
+                "gender": "female",
+                "bio": "喜歡旅行和攝影，尋找真誠的另一半",
+                "interests": ["旅行", "攝影", "咖啡"],
+                "height": 165,
+                "sex_orientation_id": 1,
+                "music_genre_id": 4
+            },
+            {
+                "name": "阿明",
+                "email": "ming@example.com",
+                "age": 28,
+                "gender": "male",
+                "bio": "熱愛運動和音樂，希望找到志同道合的人",
+                "interests": ["健身", "音樂", "電影"],
+                "height": 175,
+                "sex_orientation_id": 1,
+                "music_genre_id": 2
+            },
+            {
+                "name": "小雅",
+                "email": "ya@example.com",
+                "age": 26,
+                "gender": "female",  
+                "bio": "美食愛好者，喜歡嘗試新餐廳",
+                "interests": ["美食", "烹飪", "閱讀"],
+                "height": 160,
+                "sex_orientation_id": 1,
+                "music_genre_id": 4
+            },
+            {
+                "name": "大偉",
+                "email": "wei@example.com",
+                "age": 30,
+                "gender": "male",
+                "bio": "工程師，喜歡科技和戶外活動",
+                "interests": ["科技", "登山", "程式設計"],
+                "height": 180,
+                "sex_orientation_id": 1,
+                "music_genre_id": 8
+            },
+            {
+                "name": "小琳",
+                "email": "lin@example.com",
+                "age": 24,
+                "gender": "female",
+                "bio": "藝術系學生，熱愛創作和設計",
+                "interests": ["藝術", "設計", "手作"],
+                "height": 158,
+                "sex_orientation_id": 1,
+                "music_genre_id": 5
+            },
+            {
+                "name": "志豪",
+                "email": "hao@example.com",
+                "age": 29,
+                "gender": "male",
+                "bio": "醫生，希望找到能相伴一生的人",
+                "interests": ["醫學", "閱讀", "古典音樂"],
+                "height": 178,
+                "sex_orientation_id": 1,
+                "music_genre_id": 5
+            }
+        ]
+        
+        for user_data in sample_users:
+            # 檢查用戶是否已存在
+            cursor = conn.execute("SELECT id FROM users WHERE email = ?", (user_data["email"],))
+            existing_user = cursor.fetchone()
+            
+            if not existing_user:
+                # 創建新用戶
+                password_hash = generate_password_hash("123456")  # 預設密碼
+                cursor = conn.execute("""
+                    INSERT INTO users (name, email, password)
+                    VALUES (?, ?, ?)
+                """, (user_data["name"], user_data["email"], password_hash))
+                
+                user_id = cursor.lastrowid
+                
+                # 計算出生年份（假設當前年份為2024）
+                birth_year = 2024 - user_data["age"]
+                
+                # 創建個人資料
+                conn.execute("""
+                    INSERT INTO user_profiles 
+                    (user_id, birth_date, birth_month, birth_year, gender, 
+                     sex_orientation_id, bio, height, music_genre_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    user_id, 15, 6, birth_year, user_data["gender"],
+                    user_data["sex_orientation_id"], user_data["bio"],
+                    user_data["height"], user_data["music_genre_id"]
+                ))
+                
+                # 新增興趣
+                for interest_name in user_data["interests"]:
+                    # 確保興趣存在
+                    conn.execute("INSERT OR IGNORE INTO interests (name) VALUES (?)", (interest_name,))
+                    
+                    # 取得興趣ID並建立關聯
+                    cursor = conn.execute("SELECT id FROM interests WHERE name = ?", (interest_name,))
+                    interest_row = cursor.fetchone()
+                    
+                    if interest_row:
+                        conn.execute("""
+                            INSERT OR IGNORE INTO user_interests (user_id, interest_id) 
+                            VALUES (?, ?)
+                        """, (user_id, interest_row[0]))
+        
+        conn.commit()
+        return jsonify({"status": "success", "message": "範例用戶資料已初始化"}), 200
+        
+    except Exception as e:
+        conn.rollback()
+        print(f"初始化範例用戶時發生錯誤: {str(e)}")
+        return jsonify({"error": f"初始化失敗: {str(e)}"}), 500
+    finally:
+        conn.close()
 
 @app.route("/get_photos")
 def get_photos():
@@ -398,6 +568,7 @@ def get_threads():
     finally:
         conn.close()
 
+
 @app.route("/get_messages/<int:thread_id>")
 def get_messages(thread_id):
     if "user_id" not in session:
@@ -482,6 +653,97 @@ def send_message():
     finally:
         conn.close()
 
+@app.route("/get_profile_data")
+def get_profile_data():
+    if "user_id" not in session:
+        return jsonify({"error": "未登入"}), 401
+
+    conn = get_db()
+    try:
+        # 獲取用戶完整資料
+        cursor = conn.execute("""
+            SELECT u.name, up.*, GROUP_CONCAT(i.name) as interests
+            FROM users u
+            LEFT JOIN user_profiles up ON u.id = up.user_id
+            LEFT JOIN user_interests ui ON up.user_id = ui.user_id
+            LEFT JOIN interests i ON ui.interest_id = i.id
+            WHERE u.id = ?
+            GROUP BY u.id
+        """, (session["user_id"],))
+        
+        user_data = cursor.fetchone()
+        
+        if user_data:
+            profile_data = {
+                "name": user_data["name"],
+                "birth_date": user_data["birth_date"],
+                "birth_month": user_data["birth_month"],
+                "birth_year": user_data["birth_year"],
+                "gender": user_data["gender"],
+                "sex_orientation_id": user_data["sex_orientation_id"],
+                "height": user_data["height"],
+                "music_genre_id": user_data["music_genre_id"],
+                "mbti": user_data["mbti"],
+                "bio": user_data["bio"],
+                "interests": user_data["interests"].split(',') if user_data["interests"] else []
+            }
+        else:
+            # 如果沒有資料，返回空的結構
+            profile_data = {
+                "name": session.get("user", ""),
+                "birth_date": None,
+                "birth_month": None,
+                "birth_year": None,
+                "gender": None,
+                "sex_orientation_id": None,
+                "height": None,
+                "music_genre_id": None,
+                "mbti": "",
+                "bio": "",
+                "interests": []
+            }
+        
+        return jsonify({"profile": profile_data}), 200
+        
+    except Exception as e:
+        print(f"獲取個人資料時發生錯誤: {str(e)}")
+        return jsonify({"error": "獲取資料失敗"}), 500
+    finally:
+        conn.close()
+
+# 2. 新增：獲取預設選項數據的路由
+@app.route("/get_options_data")
+def get_options_data():
+    conn = get_db()
+    try:
+        # 獲取性向選項
+        cursor = conn.execute("SELECT id, name FROM sex_orientations ORDER BY id")
+        sex_orientations = [{"id": row["id"], "name": row["name"]} for row in cursor.fetchall()]
+        
+        # 獲取音樂類型選項
+        cursor = conn.execute("SELECT id, name FROM music_genre ORDER BY id")
+        music_genres = [{"id": row["id"], "name": row["name"]} for row in cursor.fetchall()]
+        
+        # 預設興趣選項
+        default_interests = [
+            "旅行", "攝影", "咖啡", "健身", "音樂", "電影", "美食", "烹飪", 
+            "閱讀", "科技", "登山", "程式設計", "藝術", "設計", "手作", 
+            "醫學", "古典音樂", "運動", "游泳", "瑜珈", "舞蹈", "繪畫", 
+            "寫作", "園藝", "寵物", "動漫", "遊戲", "投資", "學習語言"
+        ]
+        
+        return jsonify({
+            "sex_orientations": sex_orientations,
+            "music_genres": music_genres,
+            "default_interests": default_interests
+        }), 200
+        
+    except Exception as e:
+        print(f"獲取選項資料時發生錯誤: {str(e)}")
+        return jsonify({"error": "獲取選項失敗"}), 500
+    finally:
+        conn.close()
+
 @app.route("/save_profile", methods=["POST"])
 def save_profile():
     if "user_id" not in session:
@@ -491,46 +753,95 @@ def save_profile():
     if not data:
         return jsonify({"error": "缺少資料"}), 400
 
+    # 驗證必填欄位
+    required_fields = ['birth_year', 'birth_month', 'birth_date', 
+                      'gender', 'sex_orientation_id', 'height', 'music_genre_id']
+    
+    for field in required_fields:
+        if not data.get(field):
+            return jsonify({"error": f"缺少必填欄位: {field}"}), 400
+
     conn = get_db()
     try:
-        # 更新 user_profiles
-        conn.execute("""
-            INSERT OR REPLACE INTO user_profiles 
-            (user_id, birth_date, birth_month, birth_year, gender, sex_orientation_id, bio, height, music_genre_id, mbti)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            session["user_id"],
-            data.get("birth_date"),
-            data.get("birth_month"),
-            data.get("birth_year"),
-            data.get("gender"),
-            data.get("sex_orientation_id"),
-            data.get("bio"),
-            data.get("height"),
-            data.get("music_genre_id"),
-            data.get("mbti")
-        ))
+        # 檢查是否已有個人資料
+        cursor = conn.execute("SELECT user_id FROM user_profiles WHERE user_id = ?", (session["user_id"],))
+        profile_exists = cursor.fetchone() is not None
+
+        if profile_exists:
+            # 更新現有資料（不包含 name 欄位）
+            conn.execute("""
+                UPDATE user_profiles 
+                SET birth_date = ?, birth_month = ?, birth_year = ?, 
+                    gender = ?, sex_orientation_id = ?, bio = ?, height = ?, 
+                    music_genre_id = ?, mbti = ?
+                WHERE user_id = ?
+            """, (
+                data.get("birth_date"),
+                data.get("birth_month"),
+                data.get("birth_year"),
+                data.get("gender"),
+                data.get("sex_orientation_id"),
+                data.get("bio", ""),
+                data.get("height"),
+                data.get("music_genre_id"),
+                data.get("mbti", ""),
+                session["user_id"]
+            ))
+        else:
+            # 新增資料（不包含 name 欄位）
+            conn.execute("""
+                INSERT INTO user_profiles 
+                (user_id, birth_date, birth_month, birth_year, gender, 
+                 sex_orientation_id, bio, height, music_genre_id, mbti)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                session["user_id"],
+                data.get("birth_date"),
+                data.get("birth_month"),
+                data.get("birth_year"),
+                data.get("gender"),
+                data.get("sex_orientation_id"),
+                data.get("bio", ""),
+                data.get("height"),
+                data.get("music_genre_id"),
+                data.get("mbti", "")
+            ))
 
         # 處理興趣
+        conn.execute("DELETE FROM user_interests WHERE user_id = ?", (session["user_id"],))
+        
         if data.get("interests"):
-            conn.execute("DELETE FROM user_interests WHERE user_id = ?", (session["user_id"],))
-            for interest in data.get("interests"):
-                conn.execute("INSERT OR IGNORE INTO interests (name) VALUES (?)", (interest,))
-                cursor = conn.execute("SELECT id FROM interests WHERE name = ?", (interest,))
-                interest_id = cursor.fetchone()[0]
-                conn.execute("INSERT INTO user_interests (user_id, interest_id) VALUES (?, ?)", (session["user_id"], interest_id))
+            for interest_name in data.get("interests"):
+                if interest_name and interest_name.strip():
+                    # 確保興趣存在
+                    conn.execute("INSERT OR IGNORE INTO interests (name) VALUES (?)", (interest_name.strip(),))
+                    
+                    # 取得興趣ID並建立關聯
+                    cursor = conn.execute("SELECT id FROM interests WHERE name = ?", (interest_name.strip(),))
+                    interest_row = cursor.fetchone()
+                    
+                    if interest_row:
+                        conn.execute("INSERT INTO user_interests (user_id, interest_id) VALUES (?, ?)", 
+                                   (session["user_id"], interest_row[0]))
 
-        # 更新姓名（users 表）
+        # 更新 users 表中的姓名（如果有提供）
         if data.get("name"):
             conn.execute("UPDATE users SET name = ? WHERE id = ?", (data.get("name"), session["user_id"]))
+            # 同時更新 session 中的用戶名
+            session["user"] = data.get("name")
 
         conn.commit()
-        return jsonify({"status": "success"}), 200
+        
+        return jsonify({
+            "status": "success", 
+            "message": "個人資料已成功儲存"
+        }), 200
+            
     except Exception as e:
         conn.rollback()
-        return jsonify({"error": str(e)}), 500
+        print(f"儲存個人資料時發生錯誤: {str(e)}")
+        return jsonify({"error": f"儲存失敗: {str(e)}"}), 500
     finally:
         conn.close()
-
 if __name__ == "__main__":
     app.run(debug=True)
