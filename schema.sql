@@ -87,6 +87,16 @@ CREATE TABLE IF NOT EXISTS threads (
     FOREIGN KEY (user_b_id) REFERENCES users(id)
 );
 
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    thread_id INTEGER NOT NULL,
+    sender_id INTEGER NOT NULL,
+    message TEXT NOT NULL,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (thread_id) REFERENCES threads(id),
+    FOREIGN KEY (sender_id) REFERENCES users(id)
+);
+
 -- 訊息（修正外鍵參照）
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

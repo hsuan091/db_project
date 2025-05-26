@@ -12,8 +12,8 @@ app.secret_key = "your-secret-key"
 
 # Initialize SQLite
 def get_db():
-    conn = sqlite3.connect("models.db") 
-    conn.row_factory = sqlite3.Row #會返回一個類似字典的物件
+    conn = sqlite3.connect("models.db")
+    conn.row_factory = sqlite3.Row
     return conn
 
 # 允許的檔案類型
@@ -32,11 +32,6 @@ def index():
 def show_register():
     return render_template("register.html")
 
-#@app.route("/info", methods=["GET", "POST"])
-#def info():
-#    return render_template("info.html")
-
-
 # Register action
 @app.route("/signup", methods=["POST"])
 def signup():
@@ -52,7 +47,6 @@ def signup():
         flash("註冊成功！請登入")
         return redirect("/login")
     except sqlite3.IntegrityError as e:
-        # 檢查錯誤訊息來區分不同的情況
         error_msg = str(e)
         if "UNIQUE constraint failed" in error_msg:
             flash("Email 已被註冊")
@@ -61,7 +55,7 @@ def signup():
         else:
             flash("註冊失敗，請檢查輸入資料")
         return redirect("/register")
-    finally: #不管有沒有成功 都要關閉連線
+    finally:
         conn.close()
 
 # Login page
@@ -76,16 +70,15 @@ def login():
     password = request.form["password"]
 
     conn = get_db()
-    cursor = conn.cursor()  # 創建一個新的游標
-    cursor.execute("SELECT * FROM users WHERE email = ?", (email,))  # 執行查詢
-    user = cursor.fetchone()  # 獲取一行資料
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
+    user = cursor.fetchone()
     conn.close()
 
     if user and check_password_hash(user["password"], password):
-        session["user"] = user["name"] #將用戶名稱存入session 就是一個用來記住「誰在使用這個網站」的機制
+        session["user"] = user["name"]
         session["user_id"] = user["id"]
 
-        # 在這裡判斷是否已有個資
         conn = get_db()
         cursor = conn.execute("SELECT * FROM user_profiles WHERE user_id = ?", (user["id"],))
         user_profile = cursor.fetchone()
@@ -94,28 +87,20 @@ def login():
         if not user_profile:
             return redirect("/info")
         else:
-            return redirect("/match")
-
-        #flash("登入成功，歡迎 " + user["name"])
-        #return redirect("/match")
+            return redirect("/chat")  # 登入後直接進入聊天室
     else:
         flash("登入失敗，請檢查帳密")
-        #return redirect("/login")
-    return render_template("login.html")
-    
+        return render_template("login.html")
 
 @app.route("/match")
 def match():
     if "user" not in session:
         return redirect("/login")
-    
-    
 
     user_id = session["user_id"]
     conn = get_db()
 
     try:
-        # 取得當前用戶資料（包含 MBTI）
         cursor = conn.execute("""
             SELECT up.*, GROUP_CONCAT(i.name) as interests
             FROM user_profiles up
@@ -128,8 +113,8 @@ def match():
 
         if not user_profile:
             flash("請先完成個人資料設定，才能進行配對。")
-            return redirect("/profile")  # 導去你個資設定的頁面，請確認這個路徑正確
-    
+            return redirect("/profile")
+
         profile_complete = (
             user_profile and
             user_profile["birth_date"] and
@@ -140,12 +125,11 @@ def match():
             user_profile["bio"] and
             user_profile["height"] and
             user_profile["interests"] and
-            user_profile["mbti"]  # 確保 MBTI 也已填寫
+            user_profile["mbti"]
         )
 
         user_mbti = user_profile["mbti"].upper()
 
-        # 固定 MBTI 配對表
         mbti_match_map = {
             "ENFP": ["INFJ", "INTJ"],
             "INFJ": ["ENFP", "ENTP"],
@@ -168,7 +152,7 @@ def match():
         match_mbti_list = mbti_match_map.get(user_mbti, [])
 
         if not match_mbti_list:
-            recommendations = []  # 若找不到對應 MBTI，則無推薦
+            recommendations = []
         else:
             placeholders = ",".join("?" * len(match_mbti_list))
             query = f"""
@@ -191,71 +175,11 @@ def match():
             recommendations = cursor.fetchall()
 
         return render_template("match.html",
-                               user_profile=user_profile,
-                               recommendations=recommendations)
+                              user_profile=user_profile,
+                              recommendations=recommendations)
 
     finally:
         conn.close()
-
-'''
-# Match page
-@app.route("/match")
-def match():
-    if "user" not in session: #如果沒有登入 就會被導到登入頁面
-        return redirect("/login")
-
-    user_id = session["user_id"]
-    conn = get_db()
-    
-    try:
-        # 獲取當前用戶資料
-        cursor = conn.execute("""
-            SELECT up.*, GROUP_CONCAT(i.name) as interests
-            FROM user_profiles up
-            LEFT JOIN user_interests ui ON up.user_id = ui.user_id
-            LEFT JOIN interests i ON ui.interest_id = i.id
-            WHERE up.user_id = ?
-            GROUP BY up.user_id
-        """, (user_id,)) #將所有興趣名稱合併成一個字串
-        user_profile = cursor.fetchone()
-
-        profile_complete = (
-            user_profile and
-            user_profile["birth_date"] and
-            user_profile["birth_month"] and
-            user_profile["birth_year"] and
-            user_profile["gender"] and
-            user_profile["sex_orientation_id"] and
-            user_profile["bio"] and
-            user_profile["height"] and
-            user_profile["interests"] and 
-            user_profile["mbti"]  
-        )
-
-        # 獲取推薦用戶
-        cursor = conn.execute("""
-            SELECT u.id, u.name, up.*, GROUP_CONCAT(i.name) as interests,
-                   (SELECT photo_url FROM photos WHERE user_id = u.id AND is_profile_photo = 1 LIMIT 1) as profile_photo
-            FROM users u
-            JOIN user_profiles up ON u.id = up.user_id
-            LEFT JOIN user_interests ui ON up.user_id = ui.user_id
-            LEFT JOIN interests i ON ui.interest_id = i.id
-            WHERE u.id != ? AND u.id NOT IN (
-                SELECT to_user_id FROM match_requests WHERE from_user_id = ?
-                UNION
-                SELECT from_user_id FROM match_requests WHERE to_user_id = ?
-            )
-            GROUP BY u.id
-        """, (user_id, user_id, user_id))
-        
-        recommendations = cursor.fetchall()
-        
-        return render_template("match.html", 
-                             user_profile=user_profile,
-                             recommendations=recommendations)
-    finally:
-        conn.close()
-'''
 
 # Information page
 @app.route("/info")
@@ -288,16 +212,13 @@ def upload_photo():
         filename = secure_filename(file.filename)
         unique_filename = f"{session['user_id']}_{int(time.time())}_{filename}"
         
-        # 確保上傳目錄存在
         upload_folder = os.path.join('static', 'uploads')
         if not os.path.exists(upload_folder):
             os.makedirs(upload_folder)
             
-        # 儲存檔案
         file_path = os.path.join(upload_folder, unique_filename)
         file.save(file_path)
         
-        # 儲存到資料庫
         photo_url = f"/static/uploads/{unique_filename}"
         conn = get_db()
         try:
@@ -314,6 +235,101 @@ def upload_photo():
         except Exception as e:
             conn.rollback()
             return jsonify({"error": str(e)}), 500
-        
+        finally:
+            conn.close()
+
+# Chat room routes
+@app.route("/chat")
+def chat():
+    if "user" not in session:
+        return redirect("/login")
+    user_id = session["user_id"]
+    conn = get_db()
+    try:
+        # 獲取當前用戶名稱
+        cursor = conn.execute("SELECT name FROM users WHERE id = ?", (user_id,))
+        user = cursor.fetchone()
+
+        # 獲取其他用戶（用於選擇聊天對象）
+        cursor = conn.execute("SELECT id, name FROM users WHERE id != ?", (user_id,))
+        other_users = cursor.fetchall()
+
+        # 獲取用戶的聊天線程
+        cursor = conn.execute("""
+            SELECT t.id, t.user_a_id, t.user_b_id, t.last_message_at,
+                   (SELECT name FROM users WHERE id = CASE 
+                       WHEN t.user_a_id = ? THEN t.user_b_id 
+                       ELSE t.user_a_id 
+                   END) AS other_user_name
+            FROM threads t
+            WHERE t.user_a_id = ? OR t.user_b_id = ?
+            ORDER BY t.last_message_at DESC
+        """, (user_id, user_id, user_id))
+        threads = cursor.fetchall()
+
+        # 如果選擇了特定線程，顯示該線程的訊息
+        thread_id = request.args.get("thread_id")
+        messages = []
+        if thread_id:
+            cursor = conn.execute("""
+                SELECT cm.*, u.name AS sender_name
+                FROM chat_messages cm
+                JOIN users u ON cm.sender_id = u.id
+                WHERE cm.thread_id = ?
+                ORDER BY cm.timestamp ASC
+            """, (thread_id,))
+            messages = cursor.fetchall()
+
+    finally:
+        conn.close()
+    return render_template("chat.html", user=user["name"], other_users=other_users, threads=threads, messages=messages, selected_thread_id=thread_id)
+
+@app.route("/send_message", methods=["POST"])
+def send_message():
+    if "user_id" not in session:
+        return jsonify({"error": "未登入"}), 401
+    data = request.get_json()
+    receiver_id = data.get("receiver_id")
+    message = data.get("message")
+
+    if not receiver_id or not message:
+        return jsonify({"error": "缺少接收者或訊息"}), 400
+
+    conn = get_db()
+    try:
+        # 檢查是否已存在線程
+        cursor = conn.execute("""
+            SELECT id FROM threads 
+            WHERE (user_a_id = ? AND user_b_id = ?) OR (user_a_id = ? AND user_b_id = ?)
+        """, (session["user_id"], receiver_id, receiver_id, session["user_id"]))
+        thread = cursor.fetchone()
+
+        if not thread:
+            # 創建新線程
+            cursor = conn.execute("""
+                INSERT INTO threads (user_a_id, user_b_id, last_message_at) 
+                VALUES (?, ?, ?)
+            """, (session["user_id"], receiver_id, time.time()))
+            thread_id = cursor.lastrowid
+        else:
+            thread_id = thread["id"]
+            # 更新最後訊息時間
+            conn.execute("UPDATE threads SET last_message_at = ? WHERE id = ?", (time.time(), thread_id))
+
+        # 儲存訊息
+        conn.execute("""
+            INSERT INTO chat_messages (thread_id, sender_id, message, timestamp)
+            VALUES (?, ?, ?, ?)
+        """, (thread_id, session["user_id"], message, time.time()))
+
+        conn.commit()
+        return jsonify({"status": "success", "thread_id": thread_id})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
+
+# 啟動伺服器
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=5000)

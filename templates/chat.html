@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>聊天室</title>
+    <style>
+        .container {
+            max-width: 800px;
+            margin: 20px auto;
+            display: flex;
+        }
+        .threads-list {
+            width: 30%;
+            border-right: 1px solid #ccc;
+            padding: 10px;
+        }
+        .thread-item {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+            cursor: pointer;
+        }
+        .thread-item:hover {
+            background-color: #f0f0f0;
+        }
+        .chat-container {
+            width: 70%;
+            padding: 10px;
+            height: 400px;
+            overflow-y: auto;
+        }
+        .message {
+            margin: 10px 0;
+            padding: 5px 10px;
+            border-radius: 5px;
+        }
+        .sent {
+            background-color: #e0f7fa;
+            text-align: right;
+        }
+        .received {
+            background-color: #f0f0f0;
+        }
+        #message-input {
+            width: 80%;
+            padding: 5px;
+        }
+        #send-btn {
+            padding: 5px 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>歡迎，{{ user }}！</h1>
+    <a href="/logout">登出</a> | <a href="/match">返回配對</a>
+    <div class="container">
+        <div class="threads-list">
+            <h3>聊天線程</h3>
+            <div class="thread-item" onclick="startNewChat()">+ 新聊天</div>
+            {% for thread in threads %}
+                <div class="thread-item" onclick="location.href='/chat?thread_id={{ thread.id }}'">
+                    {{ thread.other_user_name }} 
+                    (最後訊息: {{ thread.last_message_at|round(0) if thread.last_message_at else '無' }})
+                </div>
+            {% endfor %}
+        </div>
+        <div class="chat-container" id="chat-container">
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="message {{ 'sent' if message.sender_id == session.user_id else 'received' }}">
+                        <strong>{{ message.sender_name }}:</strong> {{ message.message }} 
+                        ({{ message.timestamp|round(0) }})
+                    </div>
+                {% endfor %}
+            {% else %}
+                <p>選擇一個線程開始聊天</p>
+            {% endif %}
+        </div>
+    </div>
+    <div style="margin: 10px">
+        <input type="text" id="message-input" placeholder="輸入訊息...">
+        <button id="send-btn">發送</button>
+    </div>
+
+    <div id="new-chat-modal" style="display: none; position: fixed; top: 20%; left: 40%; background: white; padding: 20px; border: 1px solid #ccc;">
+        <h3>選擇聊天對象</h3>
+        <select id="receiver-id">
+            <option value="">選擇用戶</option>
+            {% for user in other_users %}
+                <option value="{{ user.id }}">{{ user.name }}</option>
+            {% endfor %}
+        </select>
+        <button onclick="startChat()">開始聊天</button>
+        <button onclick="closeModal()">取消</button>
+    </div>
+
+    <script>
+        const chatContainer = document.getElementById('chat-container');
+        const messageInput = document.getElementById('message-input');
+        const sendBtn = document.getElementById('send-btn');
+        const selectedThreadId = '{{ selected_thread_id or "" }}';
+
+        sendBtn.addEventListener('click', () => {
+            const message = messageInput.value.trim();
+            if (!selectedThreadId) {
+                alert('請選擇一個聊天線程');
+                return;
+            }
+            if (message) {
+                fetch('/send_message', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        receiver_id: null,  // receiver_id 由 thread 決定
+                        message,
+                        thread_id: selectedThreadId
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        messageInput.value = '';
+                        location.reload();  // 簡單更新，實際應使用 WebSocket
+                    } else {
+                        alert('發送失敗: ' + data.error);
+                    }
+                })
+                .catch(error => console.error('Error:', error));
+            }
+        });
+
+        function startNewChat() {
+            document.getElementById('new-chat-modal').style.display = 'block';
+        }
+
+        function closeModal() {
+            document.getElementById('new-chat-modal').style.display = 'none';
+        }
+
+        function startChat() {
+            const receiverId = document.getElementById('receiver-id').value;
+            if (receiverId) {
+                fetch('/send_message', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ receiver_id: receiverId, message: "開始聊天" })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        location.href = '/chat?thread_id=' + data.thread_id;
+                    } else {
+                        alert('開始聊天失敗: ' + data.error);
+                    }
+                })
+                .catch(error => console.error('Error:', error));
+            }
+        }
+
+        // 自動滾動到最新訊息
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    </script>
+</body>
+</html>
