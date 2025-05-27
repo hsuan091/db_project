@@ -2,95 +2,93 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>聊天室</title>
-    <style>
-        .container {
-            max-width: 800px;
-            margin: 20px auto;
-            display: flex;
-        }
-        .threads-list {
-            width: 30%;
-            border-right: 1px solid #ccc;
-            padding: 10px;
-        }
-        .thread-item {
-            padding: 10px;
-            border-bottom: 1px solid #ddd;
-            cursor: pointer;
-        }
-        .thread-item:hover {
-            background-color: #f0f0f0;
-        }
-        .chat-container {
-            width: 70%;
-            padding: 10px;
-            height: 400px;
-            overflow-y: auto;
-        }
-        .message {
-            margin: 10px 0;
-            padding: 5px 10px;
-            border-radius: 5px;
-        }
-        .sent {
-            background-color: #e0f7fa;
-            text-align: right;
-        }
-        .received {
-            background-color: #f0f0f0;
-        }
-        #message-input {
-            width: 80%;
-            padding: 5px;
-        }
-        #send-btn {
-            padding: 5px 10px;
-        }
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-    <h1>歡迎，{{ user }}！</h1>
-    <a href="/logout">登出</a> | <a href="/match">返回配對</a>
-    <div class="container">
-        <div class="threads-list">
-            <h3>聊天線程</h3>
-            <div class="thread-item" onclick="startNewChat()">+ 新聊天</div>
-            {% for thread in threads %}
-                <div class="thread-item" onclick="location.href='/chat?thread_id={{ thread.id }}'">
-                    {{ thread.other_user_name }} 
-                    (最後訊息: {{ thread.last_message_at|round(0) if thread.last_message_at else '無' }})
-                </div>
-            {% endfor %}
+    <div class="container chat-page">
+        <div class="welcome-section">
+            <h1 class="main-title">聊天室 💌</h1>
+            <p class="subtitle">歡迎，{{ user }}！</p>
         </div>
-        <div class="chat-container" id="chat-container">
-            {% if messages %}
-                {% for message in messages %}
-                    <div class="message {{ 'sent' if message.sender_id == session.user_id else 'received' }}">
-                        <strong>{{ message.sender_name }}:</strong> {{ message.message }} 
-                        ({{ message.timestamp|round(0) }})
-                    </div>
-                {% endfor %}
-            {% else %}
-                <p>選擇一個線程開始聊天</p>
-            {% endif %}
-        </div>
-    </div>
-    <div style="margin: 10px">
-        <input type="text" id="message-input" placeholder="輸入訊息...">
-        <button id="send-btn">發送</button>
-    </div>
 
-    <div id="new-chat-modal" style="display: none; position: fixed; top: 20%; left: 40%; background: white; padding: 20px; border: 1px solid #ccc;">
-        <h3>選擇聊天對象</h3>
-        <select id="receiver-id">
-            <option value="">選擇用戶</option>
-            {% for user in other_users %}
-                <option value="{{ user.id }}">{{ user.name }}</option>
-            {% endfor %}
-        </select>
-        <button onclick="startChat()">開始聊天</button>
-        <button onclick="closeModal()">取消</button>
+        <div class="chat-layout">
+            <div class="threads-list">
+                <h3 class="section-title">聊天列表</h3>
+                
+                {% if friends %}
+                    <!-- 已有的聊天 -->
+                    {% if threads %}
+                        <div class="thread-group">
+                            <h4 class="thread-group-title">進行中的聊天</h4>
+                            {% for thread in threads %}
+                                <div class="thread-item {% if thread.id|string == selected_thread_id %}active{% endif %}" 
+                                    onclick="location.href='/chat?thread_id={{ thread.id }}'">
+                                    <div class="thread-name">{{ thread.other_user_name }}</div>
+                                    <div class="thread-time">
+                                        {% if thread.last_message_at %}
+                                            最後訊息: {{ thread.last_message_at|round(0) }}
+                                        {% else %}
+                                            尚未開始對話
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+
+                    <!-- 尚未開始聊天的好友 -->
+                    <div class="thread-group">
+                        <h4 class="thread-group-title">可聊天的好友</h4>
+                        {% for friend in friends %}
+                            {% if not threads or friend.friend_id|string not in threads|map(attribute='user_b_id')|list and friend.friend_id|string not in threads|map(attribute='user_a_id')|list %}
+                                <div class="thread-item new-chat-user" onclick="startChat('{{ friend.friend_id }}')">
+                                    <div class="thread-name">{{ friend.friend_name }}</div>
+                                    <div class="thread-time">點擊開始聊天</div>
+                                </div>
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="no-chats">當前沒有好友，請至配對頁面尋找好友</div>
+                {% endif %}
+            </div>
+
+            <div class="chat-container">
+                <div class="messages-area" id="chat-container">
+                    {% if messages %}
+                        {% for message in messages %}
+                            <div class="message {{ 'sent' if message.sender_id == session.user_id else 'received' }}">
+                                <div class="message-content">
+                                    <div class="message-sender">{{ message.sender_name }}</div>
+                                    <div class="message-text">{{ message.message }}</div>
+                                    <div class="message-time">{{ message.timestamp|round(0) }}</div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    {% else %}
+                        <p class="no-messages">
+                            {% if friends %}
+                                選擇一個好友開始聊天
+                            {% else %}
+                                當前沒有好友可以聊天，請至配對頁面尋找好友
+                            {% endif %}
+                        </p>
+                    {% endif %}
+                </div>
+
+                <div class="message-input-area">
+                    <input type="text" id="message-input" placeholder="輸入訊息..." {% if not friends %}disabled{% endif %}>
+                    <button id="send-btn" class="send-button" {% if not friends %}disabled{% endif %}>發送</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="nav-buttons">
+            <a href="/" class="nav-button">回首頁</a>
+            <a href="/logout" class="nav-button">登出</a>
+        </div>
     </div>
 
     <script>
@@ -102,7 +100,7 @@
         sendBtn.addEventListener('click', () => {
             const message = messageInput.value.trim();
             if (!selectedThreadId) {
-                alert('請選擇一個聊天線程');
+                alert('請選擇一個聊天對象');
                 return;
             }
             if (message) {
@@ -110,7 +108,7 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
-                        receiver_id: null,  // receiver_id 由 thread 決定
+                        receiver_id: null,
                         message,
                         thread_id: selectedThreadId
                     })
@@ -128,16 +126,7 @@
             }
         });
 
-        function startNewChat() {
-            document.getElementById('new-chat-modal').style.display = 'block';
-        }
-
-        function closeModal() {
-            document.getElementById('new-chat-modal').style.display = 'none';
-        }
-
-        function startChat() {
-            const receiverId = document.getElementById('receiver-id').value;
+        function startChat(receiverId) {
             if (receiverId) {
                 fetch('/send_message', {
                     method: 'POST',
