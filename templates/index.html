@@ -6,26 +6,41 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-{% with messages = get_flashed_messages() %}
-  {% if messages %}
-    <ul class="flashes">
-      {% for message in messages %}
-        <li>{{ message }}</li>
-      {% endfor %}
-    </ul>
-  {% endif %}
-{% endwith %}
-    <h1>歡迎來到我們的交友平台 💖</h1>
+    <div class="container">
+        {% with messages = get_flashed_messages() %}
+          {% if messages %}
+            <div class="flashes">
+              {% for message in messages %}
+                <div class="flash-message">{{ message }}</div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endwith %}
+        
+        <div class="welcome-section">
+            <h1 class="main-title">歡迎來到我們的交友平台 💖</h1>
+            <p class="subtitle">這是一個為女生打造的安全舒適交友空間。</p>
+        </div>
 
-    <p>這是一個為女生打造的安全舒適交友空間。</p>
-
-    <div class="nav-buttons">
-        <a href="/match">看看配對頁</a>
-        <a href="/register">註冊</a>
-        <a href="/login">登入</a>
-        <a href="/info">個人資料</a>
-        <a href="/chat">聊天室</a>
-
+        <div class="nav-buttons">
+            {% if 'user' not in session %}
+                <!-- 未登入狀態顯示的按鈕 -->
+                <a href="/login" class="nav-button">登入</a>
+                <a href="/register" class="nav-button">註冊</a>
+            {% else %}
+                <!-- 已登入狀態顯示的按鈕 -->
+                <a href="/match" class="nav-button">尋找配對</a>
+                <a href="/chat" class="nav-button">聊天室</a>
+                <a href="/notifications" class="nav-button">通知</a>
+                <div class="nav-button-container">
+                    <a href="/info" class="nav-button">個人資料</a>
+                    {% if not has_profile %}
+                        <div class="profile-reminder">⚠️ 尚未填寫個人資料</div>
+                    {% endif %}
+                </div>
+                <a href="/logout" class="nav-button">登出</a>
+            {% endif %}
+        </div>
     </div>
 </body>
 </html>

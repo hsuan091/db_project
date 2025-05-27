@@ -6,45 +6,273 @@
     <title>配對頁面</title>
     <!-- 載入外部 CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .match-container {
+            display: flex;
+            gap: 2rem;
+            margin: 2rem 0;
+        }
+        .match-section {
+            flex: 1;
+            padding: 1rem;
+            background: #fff;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .match-section h2 {
+            color: #e15f94;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+        .match-card {
+            background: #faf4f4;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            position: relative;
+        }
+        .no-matches {
+            text-align: center;
+            color: #666;
+            padding: 2rem;
+        }
+        .profile-photo {
+            max-width: 200px;
+            border-radius: 8px;
+            margin: 1rem 0;
+        }
+        .send-request-btn {
+            background-color: #e15f94;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 1rem;
+            width: 100%;
+            transition: background-color 0.3s;
+        }
+        .send-request-btn:hover {
+            background-color: #c94c7d;
+        }
+        .send-request-btn:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .flash-message {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 1rem;
+            border-radius: 5px;
+            background: #333;
+            color: white;
+            z-index: 1000;
+            display: none;
+        }
+    </style>
+    <script>
+        async function sendFriendRequest(toUserId, button) {
+            try {
+                const response = await fetch('/send_friend_request', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        to_user_id: toUserId
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    if (data.is_mutual) {
+                        showFlashMessage('你們已成為好友！');
+                        button.disabled = true;
+                        button.style.backgroundColor = '#90EE90';
+                        button.style.color = '#006400';
+                        button.textContent = '已成為好友';
+                        // 重新載入頁面以更新所有狀態
+                        setTimeout(() => {
+                            location.reload();
+                        }, 1500);
+                    } else {
+                        showFlashMessage('邀請已發送！');
+                        button.disabled = true;
+                        button.style.backgroundColor = '#ffd700';
+                        button.style.color = '#000';
+                        button.textContent = '等待對方回應';
+                    }
+                } else {
+                    showFlashMessage(data.error || '發送失敗，請稍後再試');
+                }
+            } catch (error) {
+                showFlashMessage('發送失敗，請稍後再試');
+            }
+        }
+
+        function showFlashMessage(message) {
+            const flash = document.createElement('div');
+            flash.className = 'flash-message';
+            flash.textContent = message;
+            document.body.appendChild(flash);
+            
+            // 顯示訊息
+            setTimeout(() => {
+                flash.style.display = 'block';
+            }, 100);
+            
+            // 3秒後淡出
+            setTimeout(() => {
+                flash.style.opacity = '0';
+                flash.style.transition = 'opacity 0.5s';
+                setTimeout(() => {
+                    flash.remove();
+                }, 500);
+            }, 3000);
+        }
+    </script>
 </head>
 <body>
-{% with messages = get_flashed_messages() %}
-  {% if messages %}
-    <ul class="flashes">
-      {% for message in messages %}
-        <li>{{ message }}</li>
-      {% endfor %}
-    </ul>
-  {% endif %}
-{% endwith %}
-    <h1>歡迎來到配對頁面 💖</h1>
-
-    {% if user %}
-        <p>哈囉，{{ user }}！這是你今日的推薦對象：</p>
-    {% endif %}
-
-    {% if not profile_complete %}
-        <p class="error">你的個人資料尚未完成！請填寫以獲得更精準的推薦。</p>
-        <a href="/info">前往編輯個人資料</a>
-    {% endif %}
-
-    {% if recommendations %}
-        {% for rec in recommendations %}
-            <div class="match-card">
-                <h2>{{ rec.name }}</h2>
-                <p>年齡：{{ rec.age }} 歲</p>
-                <p>音樂類型：{{ rec.music_genre }}</p>
-                <p>喜歡的歌手：{{ rec.favorite_artist }}</p>
-                <p>興趣：{{ rec.interests|join(", ") if rec.interests else "無" }}</p>
+    <div class="container">
+        {% with messages = get_flashed_messages() %}
+          {% if messages %}
+            <div class="flashes">
+              {% for message in messages %}
+                <div class="flash-message">{{ message }}</div>
+              {% endfor %}
             </div>
-        {% endfor %}
-    {% else %}
-        <p class="no-recommendations">目前沒有其他用戶，請邀請朋友加入！</p>
-    {% endif %}
+          {% endif %}
+        {% endwith %}
 
-    <div class="nav">
-        <a href="/info">編輯個人資料</a> |
-        <a href="/logout">登出</a>
+        <div class="welcome-section">
+            <h1 class="main-title">歡迎來到配對頁面 💖</h1>
+            {% if user_profile %}
+                <p class="subtitle">哈囉！{{ user_profile.name }}，以下是可選擇配對的對象</p>
+            {% endif %}
+        </div>
+
+        <div class="match-container">
+            <!-- 左側：MBTI 匹配用戶 -->
+            <div class="match-section">
+                <h2>MBTI 最佳配對</h2>
+                {% if mbti_recommendations %}
+                    {% for rec in mbti_recommendations %}
+                        <div class="match-card">
+                            <h3>{{ rec.name }}</h3>
+                            {% if rec.birth_year %}
+                                {% set age = 2024 - rec.birth_year %}
+                                <p>年齡：{{ age }} 歲</p>
+                            {% endif %}
+                            <p>性別：
+                                {% if rec.gender == 'male' %}男性
+                                {% elif rec.gender == 'female' %}女性
+                                {% else %}其他{% endif %}
+                            </p>
+                            <p>身高：{{ rec.height }} 公分</p>
+                            {% if rec.mbti %}
+                                <p>MBTI：{{ rec.mbti }}</p>
+                            {% endif %}
+                            {% if rec.interests %}
+                                <p>興趣：{{ rec.interests }}</p>
+                            {% endif %}
+                            {% if rec.bio %}
+                                <p>自我介紹：{{ rec.bio }}</p>
+                            {% endif %}
+                            {% if rec.profile_photo %}
+                                <img src="{{ rec.profile_photo }}" alt="個人照片" class="profile-photo">
+                            {% endif %}
+                            {% if rec.relationship_status == 'friend' %}
+                                <button class="send-request-btn" disabled style="background-color: #90EE90; color: #006400;">
+                                    已成為好友
+                                </button>
+                            {% elif rec.relationship_status == 'pending' %}
+                                <button class="send-request-btn" disabled style="background-color: #ffd700; color: #000;">
+                                    等待對方回應
+                                </button>
+                            {% else %}
+                                <button class="send-request-btn" 
+                                        onclick="sendFriendRequest({{ rec.id }}, this)">
+                                    發送交友邀請
+                                </button>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="no-matches">
+                        {% if user_mbti %}
+                            目前沒有符合你 MBTI 的配對用戶
+                        {% else %}
+                            請先填寫你的 MBTI 以獲得最佳配對推薦
+                        {% endif %}
+                    </div>
+                {% endif %}
+            </div>
+
+            <!-- 右側：其他用戶 -->
+            <div class="match-section">
+                <h2>其他推薦用戶</h2>
+                {% if other_recommendations %}
+                    {% for rec in other_recommendations %}
+                        <div class="match-card">
+                            <h3>{{ rec.name }}</h3>
+                            {% if rec.birth_year %}
+                                {% set age = 2024 - rec.birth_year %}
+                                <p>年齡：{{ age }} 歲</p>
+                            {% endif %}
+                            <p>性別：
+                                {% if rec.gender == 'male' %}男性
+                                {% elif rec.gender == 'female' %}女性
+                                {% else %}其他{% endif %}
+                            </p>
+                            <p>身高：{{ rec.height }} 公分</p>
+                            {% if rec.mbti %}
+                                <p>MBTI：{{ rec.mbti }}</p>
+                            {% endif %}
+                            {% if rec.interests %}
+                                <p>興趣：{{ rec.interests }}</p>
+                            {% endif %}
+                            {% if rec.bio %}
+                                <p>自我介紹：{{ rec.bio }}</p>
+                            {% endif %}
+                            {% if rec.profile_photo %}
+                                <img src="{{ rec.profile_photo }}" alt="個人照片" class="profile-photo">
+                            {% endif %}
+                            {% if rec.relationship_status == 'friend' %}
+                                <button class="send-request-btn" disabled style="background-color: #90EE90; color: #006400;">
+                                    已成為好友
+                                </button>
+                            {% elif rec.relationship_status == 'pending' %}
+                                <button class="send-request-btn" disabled style="background-color: #ffd700; color: #000;">
+                                    等待對方回應
+                                </button>
+                            {% else %}
+                                <button class="send-request-btn" 
+                                        onclick="sendFriendRequest({{ rec.id }}, this)">
+                                    發送交友邀請
+                                </button>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="no-matches">目前沒有其他用戶</div>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if profile_complete == False %}
+            <div class="profile-reminder">⚠️ 你的個人資料尚未完成！請填寫以獲得更精準的推薦。</div>
+            <div class="nav-buttons">
+                <a href="/info" class="nav-button">前往編輯個人資料</a>
+            </div>
+        {% endif %}
+
+        <div class="nav-buttons" style="margin-top: 2rem;">
+            <a href="/" class="nav-button">回首頁</a>
+            <a href="/logout" class="nav-button">登出</a>
+        </div>
     </div>
 </body>
 </html>
