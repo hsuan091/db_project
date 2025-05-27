@@ -801,6 +801,210 @@ def handle_friend_request():
     finally:
         conn.close()
 
+# 發送好友邀請
+@app.route("/send_friend_request", methods=["POST"])
+def send_friend_request():
+    if "user_id" not in session:
+        return jsonify({"error": "未登入"}), 401
+    
+    data = request.get_json()
+    to_user_id = data.get("to_user_id")
+    
+    if not to_user_id:
+        return jsonify({"error": "缺少接收者ID"}), 400
+        
+    conn = get_db()
+    try:
+        # 檢查是否已經發送過邀請
+        cursor = conn.execute("""
+            SELECT * FROM friend_requests 
+            WHERE from_user_id = ? AND to_user_id = ?
+        """, (session["user_id"], to_user_id))
+        existing_request = cursor.fetchone()
+        
+        if existing_request:
+            return jsonify({"error": "已經發送過邀請了"}), 400
+            
+        # 檢查對方是否已經發送邀請給我
+        cursor = conn.execute("""
+            SELECT id FROM friend_requests 
+            WHERE from_user_id = ? AND to_user_id = ? AND status = 'pending'
+        """, (to_user_id, session["user_id"]))
+        other_request = cursor.fetchone()
+        
+        if other_request:
+            # 如果對方已經發送邀請，則自動接受對方的邀請
+            conn.execute("""
+                UPDATE friend_requests 
+                SET status = 'accept' 
+                WHERE id = ?
+            """, (other_request["id"],))
+            conn.commit()
+            return jsonify({
+                "status": "success", 
+                "message": "已自動接受對方的好友邀請",
+                "is_mutual": True
+            })
+            
+        # 發送新邀請
+        conn.execute("""
+            INSERT INTO friend_requests (from_user_id, to_user_id, status, created_at)
+            VALUES (?, ?, 'pending', DATETIME('now', 'localtime'))
+        """, (session["user_id"], to_user_id))
+        conn.commit()
+        return jsonify({"status": "success", "message": "邀請已發送"})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
+
+# 通知頁面
+@app.route("/notifications")
+def notifications():
+    if "user" not in session:
+        return redirect("/login")
+        
+    conn = get_db()
+    try:
+        # 獲取已發送的邀請及其狀態
+        cursor = conn.execute("""
+            SELECT fr.id, fr.created_at, fr.status,
+                   u.name as to_user_name, u.id as to_user_id,
+                   up.birth_year, up.gender, up.height, up.bio, up.mbti,
+                   (SELECT photo_url FROM photos WHERE user_id = u.id AND is_profile_photo = 1 LIMIT 1) as profile_photo
+            FROM friend_requests fr
+            JOIN users u ON fr.to_user_id = u.id
+            LEFT JOIN user_profiles up ON u.id = up.user_id
+            WHERE fr.from_user_id = ?
+            AND NOT EXISTS (
+                -- 排除已互相接受的邀請
+                SELECT 1 FROM friend_requests fr2
+                WHERE fr2.from_user_id = fr.to_user_id
+                AND fr2.to_user_id = fr.from_user_id
+                AND fr2.status = 'accept'
+                AND fr.status = 'accept'
+            )
+            ORDER BY 
+                CASE fr.status 
+                    WHEN 'pending' THEN 1 
+                    WHEN 'accept' THEN 2 
+                    WHEN 'reject' THEN 3 
+                END,
+                fr.created_at DESC
+        """, (session["user_id"],))
+        sent_requests = cursor.fetchall()
+        
+        # 獲取收到的邀請（包括待處理的）
+        cursor = conn.execute("""
+            SELECT fr.id, fr.created_at, fr.status,
+                   u.name as from_user_name, u.id as from_user_id,
+                   up.birth_year, up.gender, up.height, up.bio, up.mbti,
+                   (SELECT photo_url FROM photos WHERE user_id = u.id AND is_profile_photo = 1 LIMIT 1) as profile_photo
+            FROM friend_requests fr
+            JOIN users u ON fr.from_user_id = u.id
+            LEFT JOIN user_profiles up ON u.id = up.user_id
+            WHERE fr.to_user_id = ?
+            AND (
+                fr.status = 'pending'  -- 顯示所有待處理的邀請
+                OR (
+                    fr.status IN ('accept', 'reject')
+                    AND NOT EXISTS (  -- 對於已處理的邀請，排除已互相接受的情況
+                        SELECT 1 FROM friend_requests fr2
+                        WHERE fr2.from_user_id = fr.to_user_id
+                        AND fr2.to_user_id = fr.from_user_id
+                        AND fr2.status = 'accept'
+                        AND fr.status = 'accept'
+                    )
+                )
+            )
+            ORDER BY 
+                CASE fr.status 
+                    WHEN 'pending' THEN 1 
+                    WHEN 'accept' THEN 2 
+                    WHEN 'reject' THEN 3 
+                END,
+                fr.created_at DESC
+        """, (session["user_id"],))
+        received_requests = cursor.fetchall()
+
+        # 獲取已成為好友的用戶（只顯示最新的一條記錄）
+        cursor = conn.execute("""
+            SELECT 
+                fr.id, fr.created_at, fr.status,
+                u.name as friend_name, u.id as friend_id,
+                up.birth_year, up.gender, up.height, up.bio, up.mbti,
+                (SELECT photo_url FROM photos WHERE user_id = u.id AND is_profile_photo = 1 LIMIT 1) as profile_photo
+            FROM friend_requests fr
+            JOIN users u ON u.id = CASE 
+                WHEN fr.from_user_id = ? THEN fr.to_user_id
+                ELSE fr.from_user_id
+            END
+            LEFT JOIN user_profiles up ON u.id = up.user_id
+            WHERE fr.status = 'accept'
+            AND EXISTS (
+                SELECT 1 FROM friend_requests fr2
+                WHERE fr2.from_user_id = fr.to_user_id
+                AND fr2.to_user_id = fr.from_user_id
+                AND fr2.status = 'accept'
+            )
+            AND (fr.from_user_id = ? OR fr.to_user_id = ?)
+            AND fr.created_at >= (
+                SELECT created_at FROM friend_requests fr2
+                WHERE ((fr2.from_user_id = fr.from_user_id AND fr2.to_user_id = fr.to_user_id)
+                   OR (fr2.from_user_id = fr.to_user_id AND fr2.to_user_id = fr.from_user_id))
+                AND fr2.status = 'accept'
+                ORDER BY created_at DESC
+                LIMIT 1
+            )
+            GROUP BY CASE 
+                WHEN fr.from_user_id = ? THEN fr.to_user_id
+                ELSE fr.from_user_id
+            END
+            ORDER BY fr.created_at DESC
+        """, (session["user_id"], session["user_id"], session["user_id"], session["user_id"]))
+        mutual_friends = cursor.fetchall()
+        
+        return render_template("notifications.html", 
+                            sent_requests=sent_requests,
+                            received_requests=received_requests,
+                            mutual_friends=mutual_friends)
+    finally:
+        conn.close()
+
+# 處理好友邀請（接受/拒絕）
+@app.route("/handle_friend_request", methods=["POST"])
+def handle_friend_request():
+    if "user_id" not in session:
+        return jsonify({"error": "未登入"}), 401
+    
+    data = request.get_json()
+    request_id = data.get("request_id")
+    action = data.get("action")  # 'accept' 或 'reject'
+    
+    if not request_id or not action:
+        return jsonify({"error": "缺少必要參數"}), 400
+        
+    conn = get_db()
+    try:
+        # 更新邀請狀態
+        conn.execute("""
+            UPDATE friend_requests 
+            SET status = ? 
+            WHERE id = ? AND to_user_id = ?
+        """, (action, request_id, session["user_id"]))
+        conn.commit()
+        return jsonify({
+            "status": "success", 
+            "message": "已處理邀請",
+            "action": action
+        })
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
+
 # 啟動伺服器
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=5000)
