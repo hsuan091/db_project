@@ -115,13 +115,30 @@
             background-color: #ffd700;
             color: #000;
         }
-        .status-accept {
+        .status-friend {
             background-color: #90EE90;
             color: #006400;
         }
         .status-reject {
             background-color: #ffcccb;
             color: #8b0000;
+        }
+        .nav-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+        .nav-button {
+            padding: 0.5rem 1.5rem;
+            background-color: #e15f94;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+        }
+        .nav-button:hover {
+            background-color: #c94c7d;
         }
     </style>
 </head>
@@ -136,9 +153,8 @@
                 <!-- 待處理的邀請 -->
                 <div class="notification-section">
                     <h2>待處理的交友邀請</h2>
-                    {% set pending_requests = received_requests|selectattr('status', 'equalto', 'pending')|list %}
-                    {% if pending_requests %}
-                        {% for request in pending_requests %}
+                    {% if received_requests %}
+                        {% for request in received_requests %}
                             <div class="request-card" id="request-{{ request.id }}">
                                 <div class="request-header">
                                     {% if request.profile_photo %}
@@ -179,7 +195,7 @@
                             </div>
                         {% endfor %}
                     {% else %}
-                        <div class="no-notifications">
+                        <div class="info-message">
                             暫無待處理的邀請
                         </div>
                     {% endif %}
@@ -198,10 +214,12 @@
                                     <div class="request-info">
                                         <div class="request-name">
                                             {{ request.to_user_name }}
-                                            <span class="request-status status-{{ request.status }}">
-                                                {% if request.status == 'pending' %}等待回應
-                                                {% elif request.status == 'accept' %}已接受
-                                                {% else %}已婉拒{% endif %}
+                                            <span class="request-status {% if request.status == 'pending' %}status-pending{% else %}status-reject{% endif %}">
+                                                {% if request.status == 'pending' %}
+                                                    等待對方回應
+                                                {% else %}
+                                                    對方已婉拒
+                                                {% endif %}
                                             </span>
                                         </div>
                                         <div class="request-time">
@@ -230,64 +248,13 @@
                             </div>
                         {% endfor %}
                     {% else %}
-                        <div class="no-notifications">
+                        <div class="info-message">
                             暫無發送的邀請
                         </div>
                     {% endif %}
                 </div>
 
-                <!-- 已處理的邀請 -->
-                <div class="notification-section">
-                    <h2>已處理的交友邀請</h2>
-                    {% set processed_requests = received_requests|selectattr('status', 'ne', 'pending')|rejectattr('has_mutual_accept', 'eq', true)|list %}
-                    {% if processed_requests %}
-                        {% for request in processed_requests %}
-                            <div class="request-card">
-                                <div class="request-header">
-                                    {% if request.profile_photo %}
-                                        <img src="{{ request.profile_photo }}" alt="頭像" class="request-photo">
-                                    {% endif %}
-                                    <div class="request-info">
-                                        <div class="request-name">
-                                            {{ request.from_user_name }}
-                                            <span class="request-status status-{{ request.status }}">
-                                                {% if request.status == 'accept' %}已接受
-                                                {% else %}已婉拒{% endif %}
-                                            </span>
-                                        </div>
-                                        <div class="request-time">
-                                            {{ request.created_at|datetime }}
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="request-details">
-                                    {% if request.birth_year %}
-                                        {% set age = 2024 - request.birth_year %}
-                                        <p>年齡：{{ age }} 歲</p>
-                                    {% endif %}
-                                    <p>性別：
-                                        {% if request.gender == 'male' %}男性
-                                        {% elif request.gender == 'female' %}女性
-                                        {% else %}其他{% endif %}
-                                    </p>
-                                    <p>身高：{{ request.height }} 公分</p>
-                                    {% if request.mbti %}
-                                        <p>MBTI：{{ request.mbti }}</p>
-                                    {% endif %}
-                                    {% if request.bio %}
-                                        <p>自我介紹：{{ request.bio }}</p>
-                                    {% endif %}
-                                </div>
-                            </div>
-                        {% endfor %}
-                    {% else %}
-                        <div class="no-notifications">
-                            暫無已處理的邀請
-                        </div>
-                    {% endif %}
-                </div>
-
-                <!-- 互相接受的好友 -->
+                <!-- 新增的好友 -->
                 <div class="notification-section">
                     <h2>新增的好友</h2>
                     {% if mutual_friends %}
@@ -300,7 +267,7 @@
                                     <div class="request-info">
                                         <div class="request-name">
                                             {{ friend.friend_name }}
-                                            <span class="request-status status-accept">已成為好友</span>
+                                            <span class="request-status status-friend">已成為好友</span>
                                         </div>
                                         <div class="request-time">
                                             {{ friend.created_at|datetime }}
@@ -325,24 +292,20 @@
                                         <p>自我介紹：{{ friend.bio }}</p>
                                     {% endif %}
                                 </div>
-                                <div class="request-actions">
-                                    <a href="/chat" class="send-request-btn" style="text-decoration: none; text-align: center;">
-                                        開始聊天
-                                    </a>
-                                </div>
                             </div>
                         {% endfor %}
                     {% else %}
-                        <div class="no-notifications">
-                            暫無新增的好友
+                        <div class="info-message">
+                            暫無好友
                         </div>
                     {% endif %}
                 </div>
             </div>
-        </div>
 
-        <div class="nav-buttons">
-            <a href="/" class="nav-button">回首頁</a>
+            <div class="nav-buttons">
+                <a href="/" class="nav-button">回首頁</a>
+                <a href="/chat" class="nav-button">聊天室</a>
+            </div>
         </div>
     </div>
 
@@ -359,34 +322,24 @@
                         action: action
                     })
                 });
-                
+
                 const data = await response.json();
                 
                 if (response.ok) {
                     // 移除整個請求卡片
-                    const card = document.getElementById(`request-${requestId}`);
-                    card.style.opacity = '0';
-                    card.style.transition = 'opacity 0.5s';
-                    setTimeout(() => {
-                        card.remove();
-                        
-                        // 檢查是否還有其他請求
-                        const remainingCards = document.querySelectorAll('.request-card');
-                        if (remainingCards.length === 0) {
-                            const section = button.closest('.notification-section');
-                            const cardsContainer = section.querySelector('.request-cards');
-                            if (cardsContainer) {
-                                cardsContainer.innerHTML = '<div class="no-notifications">暫無待處理的交友邀請</div>';
-                            }
-                        }
-                        // 重新載入頁面以更新所有區塊
-                        location.reload();
-                    }, 500);
+                    const requestCard = document.getElementById(`request-${requestId}`);
+                    if (requestCard) {
+                        requestCard.remove();
+                    }
+                    
+                    // 重新載入頁面以更新所有區塊
+                    window.location.reload();
                 } else {
-                    alert(data.error || '處理失敗，請稍後再試');
+                    alert(data.error || '處理請求時發生錯誤');
                 }
             } catch (error) {
-                alert('處理失敗，請稍後再試');
+                console.error('Error:', error);
+                alert('處理請求時發生錯誤');
             }
         }
     </script>

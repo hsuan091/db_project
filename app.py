@@ -777,6 +777,22 @@ def notifications():
         
     conn = get_db()
     try:
+        # 1. 待處理的交友邀請（收到的邀請）
+        cursor = conn.execute("""
+            SELECT fr.id, fr.created_at,
+                   u.name as from_user_name, u.id as from_user_id,
+                   up.birth_year, up.gender, up.height, up.bio, up.mbti,
+                   (SELECT photo_url FROM photos WHERE user_id = u.id AND is_profile_photo = 1 LIMIT 1) as profile_photo
+            FROM friend_requests fr
+            JOIN users u ON fr.from_user_id = u.id
+            LEFT JOIN user_profiles up ON u.id = up.user_id
+            WHERE fr.to_user_id = ?
+            AND fr.status = 'pending'
+            ORDER BY fr.created_at DESC
+        """, (session["user_id"],))
+        received_requests = cursor.fetchall()
+        
+        # 2. 發送的交友邀請（包含等待回應和被拒絕的）
         cursor = conn.execute("""
             SELECT fr.id, fr.created_at, fr.status,
                    u.name as to_user_name, u.id as to_user_id,
@@ -786,58 +802,20 @@ def notifications():
             JOIN users u ON fr.to_user_id = u.id
             LEFT JOIN user_profiles up ON u.id = up.user_id
             WHERE fr.from_user_id = ?
-            AND NOT EXISTS (
-                SELECT 1 FROM friend_requests fr2
-                WHERE fr2.from_user_id = fr.to_user_id
-                AND fr2.to_user_id = fr.from_user_id
-                AND fr2.status = 'accept'
-                AND fr.status = 'accept'
-            )
+            AND fr.status IN ('pending', 'reject')
             ORDER BY 
-                CASE fr.status 
-                    WHEN 'pending' THEN 1 
-                    WHEN 'accept' THEN 2 
-                    WHEN 'reject' THEN 3 
+                CASE fr.status
+                    WHEN 'pending' THEN 1
+                    WHEN 'reject' THEN 2
                 END,
                 fr.created_at DESC
         """, (session["user_id"],))
         sent_requests = cursor.fetchall()
-        
-        cursor = conn.execute("""
-            SELECT fr.id, fr.created_at, fr.status,
-                   u.name as from_user_name, u.id as from_user_id,
-                   up.birth_year, up.gender, up.height, up.bio, up.mbti,
-                   (SELECT photo_url FROM photos WHERE user_id = u.id AND is_profile_photo = 1 LIMIT 1) as profile_photo
-            FROM friend_requests fr
-            JOIN users u ON fr.from_user_id = u.id
-            LEFT JOIN user_profiles up ON u.id = up.user_id
-            WHERE fr.to_user_id = ?
-            AND (
-                fr.status = 'pending'
-                OR (
-                    fr.status IN ('accept', 'reject')
-                    AND NOT EXISTS (
-                        SELECT 1 FROM friend_requests fr2
-                        WHERE fr2.from_user_id = fr.to_user_id
-                        AND fr2.to_user_id = fr.from_user_id
-                        AND fr2.status = 'accept'
-                        AND fr.status = 'accept'
-                    )
-                )
-            )
-            ORDER BY 
-                CASE fr.status 
-                    WHEN 'pending' THEN 1 
-                    WHEN 'accept' THEN 2 
-                    WHEN 'reject' THEN 3 
-                END,
-                fr.created_at DESC
-        """, (session["user_id"],))
-        received_requests = cursor.fetchall()
 
+        # 3. 新增的好友（已建立好友關係）
         cursor = conn.execute("""
             SELECT 
-                fr.id, fr.created_at, fr.status,
+                fr.created_at,
                 u.name as friend_name, u.id as friend_id,
                 up.birth_year, up.gender, up.height, up.bio, up.mbti,
                 (SELECT photo_url FROM photos WHERE user_id = u.id AND is_profile_photo = 1 LIMIT 1) as profile_photo
@@ -848,26 +826,12 @@ def notifications():
             END
             LEFT JOIN user_profiles up ON u.id = up.user_id
             WHERE fr.status = 'accept'
-            AND EXISTS (
-                SELECT 1 FROM friend_requests fr2
-                WHERE fr2.from_user_id = fr.to_user_id
-                AND fr2.to_user_id = fr.from_user_id
-                AND fr2.status = 'accept'
-            )
             AND (fr.from_user_id = ? OR fr.to_user_id = ?)
-            AND fr.created_at >= (
-                SELECT created_at FROM friend_requests fr2
-                WHERE ((fr2.from_user_id = fr.from_user_id AND fr2.to_user_id = fr.to_user_id)
-                   OR (fr2.from_user_id = fr.to_user_id AND fr2.to_user_id = fr.from_user_id))
-                AND fr2.status = 'accept'
-                ORDER BY created_at DESC
-                LIMIT 1
-            )
             GROUP BY CASE 
                 WHEN fr.from_user_id = ? THEN fr.to_user_id
                 ELSE fr.from_user_id
             END
-            ORDER BY fr.created_at DESC
+            ORDER BY MAX(fr.created_at) DESC
         """, (session["user_id"], session["user_id"], session["user_id"], session["user_id"]))
         mutual_friends = cursor.fetchall()
         
