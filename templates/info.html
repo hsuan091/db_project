@@ -217,15 +217,18 @@
                         }),
                     });
 
+                    const data = await res.json();
+                    
                     if (res.ok) {
                         alert("已儲存成功！");
                         // 重新載入用戶資料
-                        fetchUserProfile();
+                        window.location.reload(); // 重新載入頁面以確保所有資料都更新
                     } else {
-                        setError("儲存失敗，請稍後再試");
+                        setError(data.error || "儲存失敗，請稍後再試");
                     }
                 } catch (err) {
-                    setError("儲存失敗，無法連接到伺服器");
+                    console.error('儲存資料時發生錯誤:', err);
+                    setError("儲存失敗，請檢查網路連線並稍後再試");
                 }
             };
 
