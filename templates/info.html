@@ -5,6 +5,31 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>個人資料</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .error {
+            color: red;
+            font-size: 14px;
+        }
+        .profile-photo {
+            max-width: 150px;
+            margin: 10px 0;
+        }
+    </style>
 </head>
 <body>
     <div id="flask-flash-messages">
@@ -26,211 +51,296 @@
     <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.23.9/babel.min.js"></script>
 
     {% raw %}
-    <script type="text/babel">
-        const { useState } = React;
+<script type="text/babel">
+    const { useState, useEffect } = React;
 
-        function ProfileForm() {
-            const [name, setName] = useState("");
-            const [birthYear, setBirthYear] = useState("");
-            const [birthMonth, setBirthMonth] = useState("");
-            const [birthDate, setBirthDate] = useState("");
-            const [gender, setGender] = useState("");
-            const [sexOrientationId, setSexOrientationId] = useState("");
-            const [height, setHeight] = useState("");
-            const [bio, setBio] = useState("");
-            const [interests, setInterests] = useState("");
-            const [musicGenreId, setMusicGenreId] = useState("");
-            const [mbti, setMbti] = useState("");
-            const [error, setError] = useState("");
+    function ProfileForm() {
+        const [name, setName] = useState("");
+        const [birthYear, setBirthYear] = useState("");
+        const [birthMonth, setBirthMonth] = useState("");
+        const [birthDate, setBirthDate] = useState("");
+        const [gender, setGender] = useState("");
+        const [sexOrientationId, setSexOrientationId] = useState("");
+        const [height, setHeight] = useState("");
+        const [bio, setBio] = useState("");
+        const [interests, setInterests] = useState("");
+        const [musicGenreId, setMusicGenreId] = useState("");
+        const [mbti, setMbti] = useState("");
+        const [error, setError] = useState("");
+        const [photo, setPhoto] = useState(null);
+        const [isProfilePhoto, setIsProfilePhoto] = useState(false);
+        const [currentProfilePhoto, setCurrentProfilePhoto] = useState("");
 
-            // TODO: 這裡 musicGenres 和 sexOrientations 應由後端渲染或 API 取得
-            const musicGenres = [
-                { id: 1, name: "西洋" },
-                { id: 2, name: "聽團" },
-                { id: 3, name: "K-pop" },
-                { id: 4, name: "流行" },
-                { id: 5, name: "古典" },
-                { id: 6, name: "爵士" },
-                { id: 7, name: "嘻哈" },
-                { id: 8, name: "電子" },
-                { id: 9, name: "鄉村" },
-                { id: 10, name: "R&B" },
-            ];
-            const sexOrientations = [
-                { id: 1, name: "異性戀" },
-                { id: 2, name: "同性戀" },
-                { id: 3, name: "雙性戀" },
-                { id: 4, name: "泛性戀" },
-                { id: 5, name: "無性戀" },
-                { id: 6, name: "其他" },
-            ];
+        const musicGenres = [
+            { id: 1, name: "西洋" },
+            { id: 2, name: "聽團" },
+            { id: 3, name: "K-pop" },
+            { id: 4, name: "流行" },
+            { id: 5, name: "古典" },
+            { id: 6, name: "爵士" },
+            { id: 7, name: "嘻哈" },
+            { id: 8, name: "電子" },
+            { id: 9, name: "鄉村" },
+            { id: 10, name: "R&B" },
+        ];
+        const sexOrientations = [
+            { id: 1, name: "異性戀" },
+            { id: 2, name: "同性戀" },
+            { id: 3, name: "雙性戀" },
+            { id: 4, name: "泛性戀" },
+            { id: 5, name: "無性戀" },
+            { id: 6, name: "其他" },
+        ];
 
-            const handleSubmit = async (e) => {
-                e.preventDefault();
-                setError("");
-
-                if (!name || !birthYear || !birthMonth || !birthDate || !gender || !sexOrientationId || !height || !musicGenreId) {
-                    setError("請填寫所有必填欄位");
-                    return;
-                }
-                if (isNaN(height) || height <= 0) {
-                    setError("請輸入有效的身高");
-                    return;
-                }
-
+        // 載入當前頭像
+        useEffect(() => {
+            async function fetchProfilePhoto() {
                 try {
-                    const res = await fetch("/save_profile", {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json",
-                        },
-                        body: JSON.stringify({
-                            name,
-                            birth_year: parseInt(birthYear),
-                            birth_month: parseInt(birthMonth),
-                            birth_date: parseInt(birthDate),
-                            gender,
-                            sex_orientation_id: parseInt(sexOrientationId),
-                            height: parseInt(height),
-                            bio,
-                            interests: interests ? interests.split(",").map((s) => s.trim()) : [],
-                            music_genre_id: parseInt(musicGenreId),
-                            mbti,
-                        }),
-                    });
-
-                    if (res.ok) {
-                        alert("已儲存成功，將導向配對頁面");
-                        window.location.href = "/match";
+                    const response = await fetch('/get_profile_photo');
+                    const data = await response.json();
+                    if (response.ok && data.photo_url !== undefined) {
+                        setCurrentProfilePhoto(data.photo_url || "");
                     } else {
-                        setError("儲存失敗，請稍後再試");
+                        setCurrentProfilePhoto("");
+                        if (data.error) {
+                            console.warn('頭像載入錯誤:', data.error);
+                        }
                     }
-                } catch (err) {
-                    setError("儲存失敗，無法連接到伺服器");
+                } catch (error) {
+                    console.error('載入頭像時發生錯誤:', error);
+                    setCurrentProfilePhoto("");
                 }
-            };
+            }
+            fetchProfilePhoto();
+        }, []);
 
-            return (
-                <div>
-                    <h2>編輯個人資料</h2>
-                    {error && <p className="error">{error}</p>}
-                    <form onSubmit={handleSubmit}>
-                        <div>
-                            <label>姓名：</label>
+        const handlePhotoChange = (e) => {
+            setPhoto(e.target.files[0]);
+        };
+
+        const uploadPhoto = async () => {
+            if (!photo) return null;
+            const formData = new FormData();
+            formData.append('photo', photo);
+            formData.append('is_profile_photo', isProfilePhoto ? 1 : 0);
+
+            try {
+                const response = await fetch('/upload_photo', {
+                    method: 'POST',
+                    body: formData,
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    return data.photo_url;
+                } else {
+                    throw new Error(data.error || '上傳照片失敗');
+                }
+            } catch (err) {
+                setError('上傳照片失敗: ' + err.message);
+                return null;
+            }
+        };
+
+        const handleSubmit = async (e) => {
+            e.preventDefault();
+            setError("");
+
+            if (!name || !birthYear || !birthMonth || !birthDate || !gender || !sexOrientationId || !height || !musicGenreId) {
+                setError("請填寫所有必填欄位");
+                return;
+            }
+            if (isNaN(height) || height <= 0) {
+                setError("請輸入有效的身高");
+                return;
+            }
+
+            // 先上傳照片（如果有）
+            let photoUrl = null;
+            if (photo) {
+                photoUrl = await uploadPhoto();
+                if (!photoUrl) return; // 上傳失敗，停止提交
+            }
+
+            try {
+                const res = await fetch("/save_profile", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        name,
+                        birth_year: parseInt(birthYear),
+                        birth_month: parseInt(birthMonth),
+                        birth_date: parseInt(birthDate),
+                        gender,
+                        sex_orientation_id: parseInt(sexOrientationId),
+                        height: parseInt(height),
+                        bio,
+                        interests: interests ? interests.split(",").map((s) => s.trim()) : [],
+                        music_genre_id: parseInt(musicGenreId),
+                        mbti,
+                        photo_url: photoUrl, // 如果有新照片，傳遞 URL
+                    }),
+                });
+
+                if (res.ok) {
+                    alert("已儲存成功，將導向配對頁面");
+                    window.location.href = "/match";
+                } else {
+                    setError("儲存失敗，請稍後再試");
+                }
+            } catch (err) {
+                setError("儲存失敗，無法連接到伺服器");
+            }
+        };
+
+        return (
+            <div style={{ maxWidth: '600px', margin: '20px auto' }}>
+                <h2>編輯個人資料</h2>
+                {error && <p className="error">{error}</p>}
+                {currentProfilePhoto && (
+                    <div className="form-group">
+                        <label>當前頭像:</label>
+                        <img src={currentProfilePhoto} alt="頭像" className="profile-photo" />
+                    </div>
+                )}
+                <form onSubmit={handleSubmit}>
+                    <div className="form-group">
+                        <label>姓名：</label>
+                        <input
+                            type="text"
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            required
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label>生日：</label>
+                        <input
+                            type="number"
+                            placeholder="年"
+                            value={birthYear}
+                            onChange={(e) => setBirthYear(e.target.value)}
+                            min="1900"
+                            max="2025"
+                            required
+                            style={{ width: "80px" }}
+                        /> 年
+                        <input
+                            type="number"
+                            placeholder="月"
+                            value={birthMonth}
+                            onChange={(e) => setBirthMonth(e.target.value)}
+                            min="1"
+                            max="12"
+                            required
+                            style={{ width: "60px" }}
+                        /> 月
+                        <input
+                            type="number"
+                            placeholder="日"
+                            value={birthDate}
+                            onChange={(e) => setBirthDate(e.target.value)}
+                            min="1"
+                            max="31"
+                            required
+                            style={{ width: "60px" }}
+                        /> 日
+                    </div>
+                    <div className="form-group">
+                        <label>性別：</label>
+                        <select value={gender} onChange={(e) => setGender(e.target.value)} required>
+                            <option value="">請選擇</option>
+                            <option value="male">男性</option>
+                            <option value="female">女性</option>
+                            <option value="other">其他</option>
+                        </select>
+                    </div>
+                    <div className="form-group">
+                        <label>性向：</label>
+                        <select value={sexOrientationId} onChange={(e) => setSexOrientationId(e.target.value)} required>
+                            <option value="">請選擇</option>
+                            {sexOrientations.map((s) => (
+                                <option key={s.id} value={s.id}>{s.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="form-group">
+                        <label>身高（公分）：</label>
+                        <input
+                            type="number"
+                            value={height}
+                            onChange={(e) => setHeight(e.target.value)}
+                            min="1"
+                            required
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label>自我介紹：</label>
+                        <textarea
+                            value={bio}
+                            onChange={(e) => setBio(e.target.value)}
+                            rows="3"
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label>興趣（用逗號分隔）：</label>
+                        <input
+                            type="text"
+                            value={interests}
+                            onChange={(e) => setInterests(e.target.value)}
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label>喜歡的音樂類型：</label>
+                        <select
+                            value={musicGenreId}
+                            onChange={(e) => setMusicGenreId(e.target.value)}
+                            required
+                        >
+                            <option value="">請選擇音樂類型</option>
+                            {musicGenres.map((g) => (
+                                <option key={g.id} value={g.id}>{g.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="form-group">
+                        <label>MBTI：</label>
+                        <input
+                            type="text"
+                            value={mbti}
+                            onChange={(e) => setMbti(e.target.value)}
+                            placeholder="例如：INTJ、ENFP..."
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label>上傳照片：</label>
+                        <input
+                            type="file"
+                            accept="image/png, image/jpeg, image/gif"
+                            onChange={handlePhotoChange}
+                        />
+                        <label>
                             <input
-                                type="text"
-                                value={name}
-                                onChange={(e) => setName(e.target.value)}
-                                required
+                                type="checkbox"
+                                checked={isProfilePhoto}
+                                onChange={(e) => setIsProfilePhoto(e.target.checked)}
                             />
-                        </div>
-                        <div>
-                            <label>生日：</label>
-                            <input
-                                type="number"
-                                placeholder="年"
-                                value={birthYear}
-                                onChange={(e) => setBirthYear(e.target.value)}
-                                min="1900"
-                                max="2024"
-                                required
-                                style={{ width: "80px" }}
-                            /> 年
-                            <input
-                                type="number"
-                                placeholder="月"
-                                value={birthMonth}
-                                onChange={(e) => setBirthMonth(e.target.value)}
-                                min="1"
-                                max="12"
-                                required
-                                style={{ width: "60px" }}
-                            /> 月
-                            <input
-                                type="number"
-                                placeholder="日"
-                                value={birthDate}
-                                onChange={(e) => setBirthDate(e.target.value)}
-                                min="1"
-                                max="31"
-                                required
-                                style={{ width: "60px" }}
-                            /> 日
-                        </div>
-                        <div>
-                            <label>性別：</label>
-                            <select value={gender} onChange={(e) => setGender(e.target.value)} required>
-                                <option value="">請選擇</option>
-                                <option value="male">男性</option>
-                                <option value="female">女性</option>
-                                <option value="other">其他</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label>性向：</label>
-                            <select value={sexOrientationId} onChange={(e) => setSexOrientationId(e.target.value)} required>
-                                <option value="">請選擇</option>
-                                {sexOrientations.map((s) => (
-                                    <option key={s.id} value={s.id}>{s.name}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div>
-                            <label>身高（公分）：</label>
-                            <input
-                                type="number"
-                                value={height}
-                                onChange={(e) => setHeight(e.target.value)}
-                                min="1"
-                                required
-                            />
-                        </div>
-                        <div>
-                            <label>自我介紹：</label>
-                            <textarea
-                                value={bio}
-                                onChange={(e) => setBio(e.target.value)}
-                                rows="3"
-                            />
-                        </div>
-                        <div>
-                            <label>興趣（用逗號分隔）：</label>
-                            <input
-                                type="text"
-                                value={interests}
-                                onChange={(e) => setInterests(e.target.value)}
-                            />
-                        </div>
-                        <div>
-                            <label>喜歡的音樂類型：</label>
-                            <select
-                                value={musicGenreId}
-                                onChange={(e) => setMusicGenreId(e.target.value)}
-                                required
-                            >
-                                <option value="">請選擇音樂類型</option>
-                                {musicGenres.map((g) => (
-                                    <option key={g.id} value={g.id}>{g.name}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div>
-                            <label>MBTI：</label>
-                            <input
-                                type="text"
-                                value={mbti}
-                                onChange={(e) => setMbti(e.target.value)}
-                                placeholder="例如：INTJ、ENFP..."
-                            />
-                        </div>
+                            設為頭像
+                        </label>
+                    </div>
+                    <div className="form-group">
                         <button type="submit">儲存</button>
-                    </form>
-                </div>
-            );
-        }
+                        <a href="/match" style={{ marginLeft: '10px' }}>返回配對</a>
+                    </div>
+                </form>
+            </div>
+        );
+    }
 
-        const root = ReactDOM.createRoot(document.getElementById("root"));
-        root.render(<ProfileForm />);
-    </script>
-    {% endraw %}
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<ProfileForm />);
+</script>
+{% endraw %}
 </body>
+</html>

@@ -238,6 +238,85 @@ def upload_photo():
         finally:
             conn.close()
 
+# 新增獲取頭像路由
+@app.route("/get_profile_photo")
+def get_profile_photo():
+    if "user_id" not in session:
+        return jsonify({"error": "未登入", "photo_url": None}), 401
+
+    conn = get_db()
+    try:
+        cursor = conn.execute("""
+            SELECT photo_url 
+            FROM photos 
+            WHERE user_id = ? AND is_profile_photo = 1 
+            LIMIT 1
+        """, (session["user_id"],))
+        photo = cursor.fetchone()
+        return jsonify({"photo_url": photo["photo_url"] if photo else None})
+    finally:
+        conn.close()
+@app.route("/save_profile", methods=["POST"])
+def save_profile():
+    if "user_id" not in session:
+        return jsonify({"error": "未登入"}), 401
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "無效的請求數據"}), 400
+
+    name = data.get("name")
+    birth_year = data.get("birth_year")
+    birth_month = data.get("birth_month")
+    birth_date = data.get("birth_date")
+    gender = data.get("gender")
+    sex_orientation_id = data.get("sex_orientation_id")
+    height = data.get("height")
+    bio = data.get("bio")
+    interests = data.get("interests", [])
+    music_genre_id = data.get("music_genre_id")
+    mbti = data.get("mbti")
+    # photo_url = data.get("photo_url")  # 目前不需要，因為 photo_url 已經在 /upload_photo 中處理
+
+    if not all([name, birth_year, birth_month, birth_date, gender, sex_orientation_id, height, music_genre_id]):
+        return jsonify({"error": "缺少必填欄位"}), 400
+
+    conn = get_db()
+    try:
+        # 檢查 user_profiles 是否已存在
+        cursor = conn.execute("SELECT * FROM user_profiles WHERE user_id = ?", (session["user_id"],))
+        user_profile = cursor.fetchone()
+
+        if user_profile:
+            # 更新現有資料
+            conn.execute("""
+                UPDATE user_profiles 
+                SET name = ?, birth_year = ?, birth_month = ?, birth_date = ?, 
+                    gender = ?, sex_orientation_id = ?, height = ?, bio = ?, 
+                    interests = ?, music_genre_id = ?, mbti = ?
+                WHERE user_id = ?
+            """, (name, birth_year, birth_month, birth_date, gender, sex_orientation_id, height, bio, 
+                  ",".join(interests) if interests else "", music_genre_id, mbti, session["user_id"]))
+        else:
+            # 插入新資料
+            conn.execute("""
+                INSERT INTO user_profiles (user_id, name, birth_year, birth_month, birth_date, 
+                    gender, sex_orientation_id, height, bio, interests, music_genre_id, mbti)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (session["user_id"], name, birth_year, birth_month, birth_date, gender, 
+                  sex_orientation_id, height, bio, ",".join(interests) if interests else "", 
+                  music_genre_id, mbti))
+
+        conn.commit()
+        return jsonify({"status": "success"})
+    except sqlite3.IntegrityError as e:
+        conn.rollback()
+        return jsonify({"error": f"資料庫錯誤: {str(e)}"}), 500
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": f"儲存失敗: {str(e)}"}), 500
+    finally:
+        conn.close()
 # Chat room routes
 @app.route("/chat")
 def chat():
