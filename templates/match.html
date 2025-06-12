@@ -71,6 +71,102 @@
             z-index: 1000;
             display: none;
         }
+        .filter-section {
+            background: #fff;
+            padding: 1.5rem;
+            border-radius: 10px;
+            margin: 1.5rem 0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .filter-form {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            align-items: start;
+        }
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        .filter-group label {
+            font-weight: 600;
+            color: #444;
+            font-size: 0.9rem;
+        }
+        .filter-group select,
+        .filter-group input {
+            padding: 0.6rem;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            background-color: #fff;
+            transition: all 0.3s ease;
+        }
+        .filter-group select:hover,
+        .filter-group input:hover {
+            border-color: #e15f94;
+        }
+        .filter-group select:focus,
+        .filter-group input:focus {
+            border-color: #e15f94;
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(225, 95, 148, 0.2);
+        }
+        .height-range {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .height-range input {
+            width: 80px;
+        }
+        .filter-button {
+            background-color: #e15f94;
+            color: white;
+            border: none;
+            padding: 0.6rem 1.2rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+            font-size: 0.9rem;
+            align-self: flex-end;
+        }
+        .filter-button:hover {
+            background-color: #c94c7d;
+            transform: translateY(-1px);
+        }
+        .filter-button:active {
+            transform: translateY(0);
+        }
+        .filter-title {
+            margin-bottom: 1rem;
+            color: #333;
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        .filter-reset {
+            background-color: #f0f0f0;
+            color: #666;
+            border: none;
+            padding: 0.6rem 1.2rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+            font-size: 0.9rem;
+            margin-left: 1rem;
+        }
+        .filter-reset:hover {
+            background-color: #e0e0e0;
+        }
+        .filter-buttons {
+            grid-column: 1 / -1;
+            display: flex;
+            justify-content: center;
+            margin-top: 1rem;
+        }
     </style>
     <script>
         async function sendFriendRequest(toUserId, button) {
@@ -133,6 +229,79 @@
                 }, 500);
             }, 3000);
         }
+
+        function applyFilters() {
+            const gender = document.getElementById('genderFilter').value;
+            const sexOrientation = document.getElementById('sexOrientationFilter').value;
+            const minHeight = document.getElementById('minHeight').value;
+            const maxHeight = document.getElementById('maxHeight').value;
+            const musicGenre = document.getElementById('musicGenreFilter').value;
+            const minAge = document.getElementById('minAge').value;
+            const maxAge = document.getElementById('maxAge').value;
+
+            // 驗證身高範圍
+            if (minHeight && maxHeight && parseInt(minHeight) > parseInt(maxHeight)) {
+                showFlashMessage('最小身高不能大於最大身高');
+                return;
+            }
+
+            // 驗證年齡範圍
+            if (minAge && maxAge && parseInt(minAge) > parseInt(maxAge)) {
+                showFlashMessage('最小年齡不能大於最大年齡');
+                return;
+            }
+
+            // 構建查詢參數
+            const params = new URLSearchParams();
+            if (gender) params.set('gender', gender);
+            if (sexOrientation) params.set('sex_orientation', sexOrientation);
+            if (minHeight) params.set('min_height', minHeight);
+            if (maxHeight) params.set('max_height', maxHeight);
+            if (musicGenre) params.set('music_genre', musicGenre);
+            if (minAge) params.set('min_age', minAge);
+            if (maxAge) params.set('max_age', maxAge);
+
+            // 使用 AJAX 請求更新結果
+            fetch(`${window.location.pathname}?${params.toString()}`)
+                .then(response => response.text())
+                .then(html => {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
+                    const matchContainer = document.querySelector('.match-container');
+                    const newMatchContainer = doc.querySelector('.match-container');
+                    if (matchContainer && newMatchContainer) {
+                        matchContainer.innerHTML = newMatchContainer.innerHTML;
+                    }
+                    showFlashMessage('篩選條件已更新');
+                })
+                .catch(error => {
+                    console.error('更新失敗:', error);
+                    showFlashMessage('更新失敗，請稍後再試');
+                });
+        }
+
+        function resetFilters() {
+            document.getElementById('genderFilter').value = '';
+            document.getElementById('sexOrientationFilter').value = '';
+            document.getElementById('minHeight').value = '';
+            document.getElementById('maxHeight').value = '';
+            document.getElementById('musicGenreFilter').value = '';
+            document.getElementById('minAge').value = '';
+            document.getElementById('maxAge').value = '';
+            applyFilters();
+        }
+
+        // 頁面載入時設置篩選條件
+        window.onload = function() {
+            const params = new URLSearchParams(window.location.search);
+            if (params.has('gender')) document.getElementById('genderFilter').value = params.get('gender');
+            if (params.has('sex_orientation')) document.getElementById('sexOrientationFilter').value = params.get('sex_orientation');
+            if (params.has('min_height')) document.getElementById('minHeight').value = params.get('min_height');
+            if (params.has('max_height')) document.getElementById('maxHeight').value = params.get('max_height');
+            if (params.has('music_genre')) document.getElementById('musicGenreFilter').value = params.get('music_genre');
+            if (params.has('min_age')) document.getElementById('minAge').value = params.get('min_age');
+            if (params.has('max_age')) document.getElementById('maxAge').value = params.get('max_age');
+        }
     </script>
 </head>
 <body>
@@ -151,6 +320,72 @@
             <h1 class="main-title">歡迎來到配對頁面 💖</h1>
             {% if user_profile %}
                 <p class="subtitle">哈囉！{{ user_profile.name }}，以下是可選擇配對的對象</p>
+                
+                <!-- 修改篩選區域的HTML結構 -->
+                <div class="filter-section">
+                    <h3 class="filter-title">篩選條件</h3>
+                    <form id="filterForm" class="filter-form">
+                        <div class="filter-group">
+                            <label>性別</label>
+                            <select name="gender" id="genderFilter">
+                                <option value="">不限</option>
+                                <option value="male">男性</option>
+                                <option value="female">女性</option>
+                                <option value="other">其他</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label>年齡範圍</label>
+                            <div class="height-range">
+                                <input type="number" id="minAge" placeholder="最小" min="18" max="100">
+                                <span>-</span>
+                                <input type="number" id="maxAge" placeholder="最大" min="18" max="100">
+                                <span>歲</span>
+                            </div>
+                        </div>
+                        <div class="filter-group">
+                            <label>性向</label>
+                            <select name="sexOrientation" id="sexOrientationFilter">
+                                <option value="">不限</option>
+                                <option value="1">異性戀</option>
+                                <option value="2">同性戀</option>
+                                <option value="3">雙性戀</option>
+                                <option value="4">泛性戀</option>
+                                <option value="5">無性戀</option>
+                                <option value="6">其他</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label>身高範圍</label>
+                            <div class="height-range">
+                                <input type="number" id="minHeight" placeholder="最小" min="140" max="220">
+                                <span>-</span>
+                                <input type="number" id="maxHeight" placeholder="最大" min="140" max="220">
+                                <span>cm</span>
+                            </div>
+                        </div>
+                        <div class="filter-group">
+                            <label>音樂類型</label>
+                            <select name="musicGenre" id="musicGenreFilter">
+                                <option value="">不限</option>
+                                <option value="1">西洋</option>
+                                <option value="2">聽團</option>
+                                <option value="3">K-pop</option>
+                                <option value="4">流行</option>
+                                <option value="5">古典</option>
+                                <option value="6">爵士</option>
+                                <option value="7">嘻哈</option>
+                                <option value="8">電子</option>
+                                <option value="9">鄉村</option>
+                                <option value="10">R&B</option>
+                            </select>
+                        </div>
+                        <div class="filter-buttons">
+                            <button type="button" onclick="applyFilters()" class="filter-button">套用篩選</button>
+                            <button type="button" onclick="resetFilters()" class="filter-reset">重置篩選</button>
+                        </div>
+                    </form>
+                </div>
             {% endif %}
         </div>
 

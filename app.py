@@ -11,7 +11,7 @@ from datetime import datetime
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "your-secret-key")  # 改用環境變數，避免硬編碼
 
-# 添加時間格式化過濾器
+# 添加時間格式化過濾器：將時間戳記（timestamp）轉換成人類可讀的日期時間格式
 @app.template_filter('datetime')
 def format_datetime(timestamp):
     if not timestamp:
@@ -251,6 +251,15 @@ def match():
     user_id = session["user_id"]
     conn = get_db()
     try:
+        # 獲取篩選條件
+        gender_filter = request.args.get('gender')
+        sex_orientation_filter = request.args.get('sex_orientation')
+        min_height_filter = request.args.get('min_height')
+        max_height_filter = request.args.get('max_height')
+        music_genre_filter = request.args.get('music_genre')
+        min_age_filter = request.args.get('min_age')
+        max_age_filter = request.args.get('max_age')
+
         cursor = conn.execute("""
             SELECT up.*, GROUP_CONCAT(i.name) as interests
             FROM user_profiles up
@@ -315,13 +324,51 @@ def match():
                        WHEN u.id IN ({}) THEN 'friend'
                        WHEN u.id IN ({}) THEN 'pending'
                        ELSE 'none'
-                   END as relationship_status
+                   END as relationship_status,
+                   (strftime('%Y', 'now') - up.birth_year) as age
             FROM users u
             JOIN user_profiles up ON u.id = up.user_id
             LEFT JOIN user_interests ui ON up.user_id = ui.user_id
             LEFT JOIN interests i ON ui.interest_id = i.id
             WHERE u.id != ?
         """
+
+        # 添加篩選條件
+        filter_conditions = []
+        filter_params = []
+
+        if gender_filter:
+            filter_conditions.append("up.gender = ?")
+            filter_params.append(gender_filter)
+
+        if sex_orientation_filter:
+            filter_conditions.append("up.sex_orientation_id = ?")
+            filter_params.append(int(sex_orientation_filter))
+
+        if min_height_filter:
+            filter_conditions.append("up.height >= ?")
+            filter_params.append(int(min_height_filter))
+
+        if max_height_filter:
+            filter_conditions.append("up.height <= ?")
+            filter_params.append(int(max_height_filter))
+
+        if music_genre_filter:
+            filter_conditions.append("up.music_genre_id = ?")
+            filter_params.append(int(music_genre_filter))
+
+        # 添加年齡篩選條件
+        current_year = datetime.now().year
+        if min_age_filter:
+            filter_conditions.append("(? - up.birth_year) >= ?")
+            filter_params.extend([current_year, int(min_age_filter)])
+
+        if max_age_filter:
+            filter_conditions.append("(? - up.birth_year) <= ?")
+            filter_params.extend([current_year, int(max_age_filter)])
+
+        if filter_conditions:
+            base_query += " AND " + " AND ".join(filter_conditions)
 
         friend_ids_sql = ','.join(['?' for _ in friend_ids]) or 'NULL'
         pending_ids_sql = ','.join(['?' for _ in pending_request_ids]) or 'NULL'
@@ -331,7 +378,7 @@ def match():
             mbti_query = base_query.format(friend_ids_sql, pending_ids_sql) + " AND up.mbti IN ({}) GROUP BY u.id".format(
                 ",".join("?" * len(match_mbti_list))
             )
-            params = friend_ids + pending_request_ids + [user_id] + match_mbti_list
+            params = friend_ids + pending_request_ids + [user_id] + filter_params + match_mbti_list
             cursor = conn.execute(mbti_query, params)
             mbti_recommendations = cursor.fetchall()
 
@@ -341,7 +388,7 @@ def match():
                 ",".join(str(rec["id"]) for rec in mbti_recommendations)
             )
         other_users_query += " GROUP BY u.id"
-        params = friend_ids + pending_request_ids + [user_id]
+        params = friend_ids + pending_request_ids + [user_id] + filter_params
         cursor = conn.execute(other_users_query, params)
         other_recommendations = cursor.fetchall()
 
